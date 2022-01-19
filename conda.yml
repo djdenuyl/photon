@@ -1,0 +1,6 @@
+name: photon
+channels:
+  - conda-forge
+dependencies:
+  - python==3.9.7
+  - tk
