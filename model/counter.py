@@ -8,8 +8,8 @@ from tkinter import Frame, Button, Label
 
 
 class Counter(Frame):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.value = 0
 
         self.incrementer = Button(master=self, text='+', command=self.increment)

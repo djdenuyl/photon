@@ -130,3 +130,6 @@ dmypy.json
 
 # pycharm
 .idea/
+
+# txt files in the test folder
+test/*.txt

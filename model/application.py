@@ -4,38 +4,34 @@ main application class to run the program
 author: David den Uyl (djdenuyl@gmail.com)
 date: 2022-01-19
 """
-from tkinter import Tk
-from model.counter import Counter
+from tkinter import Tk, Text
+from model.sidebar import Sidebar
+
+
+NAME = 'Photon Editor - v0.0'
 
 
 class Application(Tk):
     """ The application """
-    def __init__(self):
+    def __init__(self, name=None):
         super().__init__()
+
+        self.name = name or NAME
+        self.title(self.name)
+
+        self.editor = Text(master=self)
+        self.sidebar = Sidebar(master=self, container=self.editor, app=self)
 
         self.layout()
         self.mainloop()
 
     def layout(self):
-        counter = Counter(master=self)
-        counter.pack()
+        self.rowconfigure(0, minsize=800, weight=1)
+        self.columnconfigure(1, minsize=800, weight=1)
+
+        self.sidebar.grid(row=0, column=0, sticky="ns")
+        self.editor.grid(row=0, column=1, sticky="nsew")
 
 
 if __name__ == '__main__':
     Application()
-
-#     Button(master=button_frame,
-#            text='Click here',
-#            width=25,
-#            height=5,
-#            bg='blue',
-#            foreground='yellow'
-#            ).pack()
-#
-#
-#
-# def add_border_buttons(self):
-#     for b in BorderEffectOption:
-#         frame = Frame(master=self, relief=b.value, borderwidth=5)
-#         frame.pack(side=LEFT)
-#         Label(master=frame, text=b.name).pack()
