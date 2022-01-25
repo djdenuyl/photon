@@ -38,8 +38,8 @@ class Opener(Button):
 
         self.container.insert(END, content)
 
-        # TODO: Can this be done with events so I dont have to pass the app to the button?
-        self.app.title(f'{self.app.name} - {filepath}')
+        # fire an file updated event
+        self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
 
 
 class Saver(Button):
@@ -63,4 +63,5 @@ class Saver(Button):
             text = self.container.get("1.0", END)
             file.write(text)
 
-        self.app.title(f'{self.app.name} - {filepath}')
+        # fire an file updated event
+        self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
