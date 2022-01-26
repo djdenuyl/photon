@@ -6,24 +6,23 @@ Created on 2022-01-19
 @author: David den Uyl (ddenuyl@bebr.nl)
 """
 from enum import Enum
-from tkinter import Button, END
+from tkinter import Button, PhotoImage, CENTER
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 
 
-DEFAULT_EXTENSION = '.txt'
+DEFAULT_EXTENSION = '.png'
 
 
 class Extension(Enum):
-    TEXT = ('Text Files', '*.txt')
+    PNG = ('PNG Files', '*.png')
     ALL = ('All File', '*.*')
 
 
 class Opener(Button):
     """ Represents a GUI component that handles opening of files"""
-    def __init__(self, container, app, *args, **kwargs):
+    def __init__(self, container, *args, **kwargs):
         super().__init__(*args, **kwargs, command=self.open_file)
         self.container = container
-        self.app = app
 
     def open_file(self):
         """Open a file for editing."""
@@ -32,11 +31,18 @@ class Opener(Button):
         if not filepath:
             return
 
-        self.container.delete("1.0", END)
-        with open(filepath, "r") as file:
-            content = file.read()
+        # delete the current image
+        self.container.delete(self.container.canvas_image)
 
-        self.container.insert(END, content)
+        # load the new image
+        self.container.image = PhotoImage(file=filepath)
+
+        # display the image on the canvas
+        self.container.canvas_image = self.container.create_image(self.container.winfo_height()/2,
+                                                                  self.container.winfo_width()/2,
+                                                                  anchor=CENTER,
+                                                                  image=self.container.image
+                                                                  )
 
         # fire an file updated event
         self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
@@ -44,10 +50,9 @@ class Opener(Button):
 
 class Saver(Button):
     """ Represents a GUI component that handles saving of files """
-    def __init__(self, container, app, *args, **kwargs):
+    def __init__(self, container, *args, **kwargs):
         super().__init__(*args, **kwargs, command=self.save_file_as)
         self.container = container
-        self.app = app
 
     def save_file_as(self):
         """Save the current file as a new file."""
@@ -59,9 +64,8 @@ class Saver(Button):
         if not filepath:
             return
 
-        with open(filepath, "w") as file:
-            text = self.container.get("1.0", END)
-            file.write(text)
+        # save image
+        self.container.image.write(filepath, format='png')
 
         # fire an file updated event
         self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
