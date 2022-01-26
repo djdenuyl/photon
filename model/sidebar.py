@@ -12,13 +12,11 @@ from model.file_handling import Opener, Saver
 
 class Sidebar(Frame):
     """ Represents a GUI component that contains tools for editing the file """
-    def __init__(self, container, app, *args, **kwargs):
+    def __init__(self, container, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.container = container
-        self.app = app
-
-        self.open = Opener(master=self, container=self.container, app=self.app, text='Open')
-        self.save_as = Saver(master=self, container=self.container, app=self.app, text='Save As')
+        self.open = Opener(master=self, container=self.container, text='Open')
+        self.save_as = Saver(master=self, container=self.container, text='Save As')
         self.counter = Counter(master=self)
 
         self.layout()

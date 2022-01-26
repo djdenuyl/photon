@@ -37,7 +37,7 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Unit test / coverage reports
+# Unit data / coverage reports
 htmlcov/
 .tox/
 .nox/
@@ -131,5 +131,5 @@ dmypy.json
 # pycharm
 .idea/
 
-# txt files in the test folder
-test/*.txt
+# txt files in the data folder
+data/*
