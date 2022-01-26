@@ -6,7 +6,7 @@ Created on 2022-01-19
 @author: David den Uyl (ddenuyl@bebr.nl)
 """
 from enum import Enum
-from tkinter import Button, PhotoImage
+from tkinter import Button, PhotoImage, CENTER
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 
 
@@ -38,7 +38,11 @@ class Opener(Button):
         self.container.image = PhotoImage(file=filepath)
 
         # display the image on the canvas
-        self.container.canvas_image = self.container.create_image(150, 100, image=self.container.image)
+        self.container.canvas_image = self.container.create_image(self.container.winfo_height()/2,
+                                                                  self.container.winfo_width()/2,
+                                                                  anchor=CENTER,
+                                                                  image=self.container.image
+                                                                  )
 
         # fire an file updated event
         self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
