@@ -1,95 +1,61 @@
 """
-Generic drag and droppable widget
+Drag and Drop widget canvas for Images
 
 adapted from: https://raw.githubusercontent.com/python/cpython/main/Lib/tkinter/dnd.py
 
 author: David den Uyl (ddenuyl@gmail.com)
 date: 2022-01-26
 """
-from tkinter import Label
-from handlers.dnd_handler import dnd_start
 
 
 class Draggable:
-    """ A widget that can be dragged and dropped """
-    def __init__(self, image):
-        self.image = image
-        self.canvas = None
-        self.label = None
-        self.id = None
+    """ A Container for a widget that can be dragged and dropped. It is the liaison between the image and the canvas """
+    def __init__(self, master, widget, anchor, window):
+        self.master = master
+        self.widget = widget
+        self.anchor = anchor
+        self.window = window
 
-        self.x_off = None
-        self.y_off = None
-        self.x_orig = None
-        self.y_orig = None
+        self.x_offset = None
+        self.y_offset = None
+        self.x_original = None
+        self.y_original = None
 
-    def attach(self, canvas, x=10, y=10):
-        """ Attach draggable to canvas """
-        if canvas is self.canvas:
-            self.canvas.coords(self.id, x, y)
-            return
+        self.widget.bind("<ButtonPress-1>", self.on_click)
+        self.widget.bind("<B1-Motion>", self.on_drag)
+        self.widget.bind("<ButtonRelease-1>", self.on_drop)
 
-        if self.canvas is not None:
-            self.detach()
+    def on_click(self, event):
+        """ on click, set the original widget location """
+        # collect the x,y event offset
+        self.x_offset = event.x
+        self.y_offset = event.y
 
-        if canvas is None:
-            return
+        # collect the original x,y coords
+        self.x_original, self.y_original = self.master.coords(self.window)
 
-        self.canvas = canvas
-        self.label = Label(canvas,
-                           image=self.image,
-                           borderwidth=2,
-                           relief="raised",
-                           height=self.image.height(),
-                           width=self.image.width()
-                           )
-        self.id = canvas.create_window(x, y, window=self.label, anchor="nw")
-        self.label.bind("<ButtonPress>", self.press)
+    def on_drag(self, event):
+        """ on drag, move the widget """
+        x, y = self.position(event)
+        self.master.coords(self.window, x, y)
 
-    def detach(self):
-        """ detach the draggable from canvas """
-        if self.canvas is None:
-            return
-        self.canvas.delete(self.id)
-        self.label.destroy()
-        self.canvas = None
-        self.label = None
-        self.id = None
+    def on_drop(self, event):
+        """ On drop, delete the original window and create a new one at the new location """
+        x, y = self.position(event)
 
-    def press(self, event):
-        """ set the x,y coords on button press """
+        # self.master.delete(self.window)
+        # self.window = self.master.create_window(x, y, window=self.widget, anchor="nw")
+        self.master.coords(self.window, x, y)
 
-        # if this widget is clicked
-        if dnd_start(self, event):
-
-            # collect the x,y offset
-            self.x_off = event.x
-            self.y_off = event.y
-
-            # collect the original x,y coords
-            self.x_orig, self.y_orig = self.canvas.coords(self.id)
-
-    def move(self, event):
-        """ move the widget """
-        x, y = self.where(self.canvas, event)
-        self.canvas.coords(self.id, x, y)
-
-    def putback(self):
-        """ put the widget back where it was """
-        self.canvas.coords(self.id, self.x_orig, self.y_orig)
-
-    def where(self, canvas, event):
+    def position(self, event):
         """ keep track of the widgets position """
         # where the corner of the canvas is relative to the screen:
-        x_org = canvas.winfo_rootx()
-        y_org = canvas.winfo_rooty()
+        x_master = self.master.winfo_rootx()
+        y_master = self.master.winfo_rooty()
 
         # where the pointer is relative to the canvas widget:
-        x = event.x_root - x_org
-        y = event.y_root - y_org
+        x = event.x_root - x_master
+        y = event.y_root - y_master
 
         # compensate for initial pointer offset
-        return x - self.x_off, y - self.y_off
-
-    def dnd_end(self, target, event):
-        pass
+        return x - self.x_offset, y - self.y_offset

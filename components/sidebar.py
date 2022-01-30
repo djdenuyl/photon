@@ -7,7 +7,7 @@ Created on 2022-01-19
 """
 from tkinter import Frame
 from components.counter import Counter
-from handlers.file_handling import Opener, Saver
+from handlers.file_handling import FileOpener, FileSaver, ImageImporter, NewFileCreator, ImageExporter
 
 
 class Sidebar(Frame):
@@ -15,13 +15,19 @@ class Sidebar(Frame):
     def __init__(self, container, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.container = container
-        self.open = Opener(master=self, container=self.container, text='Open')
-        self.save_as = Saver(master=self, container=self.container, text='Save As')
+        self.new = NewFileCreator(master=self, canvas=self.container, text='New File')
+        self.open = FileOpener(master=self, canvas=self.container, text='Open File')
+        self.save_as = FileSaver(master=self, canvas=self.container, text='Save File As')
+        self._import = ImageImporter(master=self, canvas=self.container, text='Import Image')
+        self._export = ImageExporter(master=self, canvas=self.container, text='Export Image')
         self.counter = Counter(master=self)
 
         self.layout()
 
     def layout(self):
-        self.open.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        self.save_as.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
-        self.counter.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self.new.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        self.open.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
+        self.save_as.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self._import.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
+        self._export.grid(row=4, column=0, sticky="ew", padx=5, pady=5)
+        self.counter.grid(row=5, column=0, sticky="ew", padx=5, pady=5)

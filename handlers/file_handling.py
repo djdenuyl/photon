@@ -5,67 +5,137 @@ Created on 2022-01-19
 
 @author: David den Uyl (ddenuyl@bebr.nl)
 """
+import json
 from enum import Enum
-from tkinter import Button, PhotoImage, CENTER
+from os import getcwd, remove
+from os.path import join
+from tkinter import Button
 from tkinter.filedialog import askopenfilename, asksaveasfilename
+from PIL import Image
+from components.container import Container
+
+DEFAULT_PHOTON_EXTENSION = '.hv'
+DEFAULT_IMAGE_EXTENSION = '.png'
 
 
-DEFAULT_EXTENSION = '.png'
-
-
-class Extension(Enum):
+class ImageExtension(Enum):
+    """ enum of supported image extensions """
     PNG = ('PNG Files', '*.png')
     ALL = ('All File', '*.*')
 
 
-class Opener(Button):
-    """ Represents a GUI component that handles opening of files"""
-    def __init__(self, container, *args, **kwargs):
-        super().__init__(*args, **kwargs, command=self.open_file)
-        self.container = container
+class PhotonExtension(Enum):
+    """ enum of supported Photon extensions """
+    HV = ('Photon Files', '*.hv')
+    ALL = ('All File', '*.*')
 
-    def open_file(self):
-        """Open a file for editing."""
-        filepath = askopenfilename(filetypes=[e.value for e in Extension])
+
+class NewFileCreator(Button):
+    """ Represents a GUI component that handles creation of new files"""
+    def __init__(self, canvas, *args, **kwargs):
+        super().__init__(*args, **kwargs, command=self.create_new_file)
+        self.canvas = canvas
+
+    def create_new_file(self):
+        """Create a container in the canvas containing the image located at filepath """
+        [self.canvas.delete(c.window) for c in self.canvas.containers]
+        self.canvas.containers = []
+
+
+class ImageImporter(Button):
+    """ Represents a GUI component that handles importing of images"""
+    def __init__(self, canvas, *args, **kwargs):
+        super().__init__(*args, **kwargs, command=self.open)
+        self.canvas = canvas
+
+    def open(self):
+        """Create a container in the canvas containing the image located at filepath """
+        filepath = askopenfilename(filetypes=[e.value for e in ImageExtension])
 
         if not filepath:
             return
 
-        # delete the current image
-        self.container.delete(self.container.canvas_image)
-
-        # load the new image
-        self.container.image = PhotoImage(file=filepath)
-
-        # display the image on the canvas
-        self.container.canvas_image = self.container.create_image(self.container.winfo_height()/2,
-                                                                  self.container.winfo_width()/2,
-                                                                  anchor=CENTER,
-                                                                  image=self.container.image
-                                                                  )
-
-        # fire an file updated event
-        self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
+        self.canvas.containers.append(Container(self.canvas, image_path=filepath))
 
 
-class Saver(Button):
-    """ Represents a GUI component that handles saving of files """
-    def __init__(self, container, *args, **kwargs):
-        super().__init__(*args, **kwargs, command=self.save_file_as)
-        self.container = container
+class ImageExporter(Button):
+    """ Represents a GUI component that handles the saving of images"""
+    def __init__(self, canvas, *args, **kwargs):
+        super().__init__(*args, **kwargs, command=self.save)
+        self.canvas = canvas
 
-    def save_file_as(self):
-        """Save the current file as a new file."""
+    def save(self):
+        """Create a container in the canvas containing the image located at filepath """
         filepath = asksaveasfilename(
-            defaultextension=DEFAULT_EXTENSION,
-            filetypes=[e.value for e in Extension],
+            defaultextension=DEFAULT_IMAGE_EXTENSION,
+            filetypes=[e.value for e in ImageExtension],
         )
 
         if not filepath:
             return
 
-        # save image
-        self.container.image.write(filepath, format='png')
+        # save the canvas
+        # TODO: this feels hacky, investigate if I can directly export to PNG
+        self.canvas.postscript(file=f'{filepath}.ps')
+        img = Image.open(f'{filepath}.ps')
+        img.save(filepath)
+        remove(f'{filepath}.ps')
+
+
+class FileOpener(Button):
+    """ Represents a GUI component that handles opening of .ptn files"""
+    def __init__(self, canvas, *args, **kwargs):
+        super().__init__(*args, **kwargs, command=self.open)
+        self.canvas = canvas
+
+    def open(self):
+        """Open a file for editing."""
+        filepath = askopenfilename(filetypes=[e.value for e in PhotonExtension])
+
+        if not filepath:
+            return
+
+        # remove old objects
+        [self.canvas.delete(c.window) for c in self.canvas.containers]
+        self.canvas.containers = []
+
+        # create new objects
+        with open(filepath, 'r') as f:
+            content = json.loads(f.read())
+
+        # append all images to the list containers
+        [self.canvas.containers.append(Container(self.canvas, c['image'], *c['location'])) for c in content]
+
+        # fire an file updated event
+        self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
+
+
+class FileSaver(Button):
+    """ Represents a GUI component that handles saving of files """
+    def __init__(self, canvas, *args, **kwargs):
+        super().__init__(*args, **kwargs, command=self.save_file_as)
+        self.canvas = canvas
+
+    def save_file_as(self):
+        """Save the current file as a new file."""
+        filepath = asksaveasfilename(
+            defaultextension=DEFAULT_PHOTON_EXTENSION,
+            filetypes=[e.value for e in PhotonExtension],
+        )
+
+        if not filepath:
+            return
+
+        # save photon file
+        content = [
+            {
+                'image': join(getcwd(), c.image_path),
+                'location': self.canvas.coords(c.window)
+            } for c in self.canvas.containers
+        ]
+
+        with open(filepath, 'w') as f:
+            f.write(json.dumps(content))
 
         # fire an file updated event
         self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
