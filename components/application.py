@@ -6,8 +6,8 @@ date: 2022-01-19
 """
 from tkinter import Tk
 from typing import Callable
-from model.main_canvas import MainCanvas
-from model.sidebar import Sidebar
+from components.main_canvas import MainCanvas
+from components.sidebar import Sidebar
 
 
 NAME = 'Photon Editor - v0.0'
@@ -22,7 +22,7 @@ class Application(Tk):
         self.title(self.name)
 
         # init components
-        self.canvas = MainCanvas(master=self, height=300, width=300, bg='white')
+        self.canvas = MainCanvas(master=self, bg='white')
         self.sidebar = Sidebar(master=self, container=self.canvas)
 
         # init bindings

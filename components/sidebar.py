@@ -6,8 +6,8 @@ Created on 2022-01-19
 @author: David den Uyl (djdenuyl@gmail.nl)
 """
 from tkinter import Frame
-from model.counter import Counter
-from model.file_handling import Opener, Saver
+from components.counter import Counter
+from handlers.file_handling import Opener, Saver
 
 
 class Sidebar(Frame):
