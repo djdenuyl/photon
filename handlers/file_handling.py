@@ -7,13 +7,14 @@ Created on 2022-01-19
 """
 import json
 from enum import Enum
-from os import getcwd
+from os import getcwd, remove
 from os.path import join
 from tkinter import Button
 from tkinter.filedialog import askopenfilename, asksaveasfilename
+from PIL import Image
 from components.container import Container
 
-DEFAULT_PHOTON_EXTENSION = '.ptn'
+DEFAULT_PHOTON_EXTENSION = '.hv'
 DEFAULT_IMAGE_EXTENSION = '.png'
 
 
@@ -25,8 +26,20 @@ class ImageExtension(Enum):
 
 class PhotonExtension(Enum):
     """ enum of supported Photon extensions """
-    PNG = ('PTN Files', '*.ptn')
+    HV = ('Photon Files', '*.hv')
     ALL = ('All File', '*.*')
+
+
+class NewFileCreator(Button):
+    """ Represents a GUI component that handles creation of new files"""
+    def __init__(self, canvas, *args, **kwargs):
+        super().__init__(*args, **kwargs, command=self.create_new_file)
+        self.canvas = canvas
+
+    def create_new_file(self):
+        """Create a container in the canvas containing the image located at filepath """
+        [self.canvas.delete(c.window) for c in self.canvas.containers]
+        self.canvas.containers = []
 
 
 class ImageImporter(Button):
@@ -43,6 +56,30 @@ class ImageImporter(Button):
             return
 
         self.canvas.containers.append(Container(self.canvas, image_path=filepath))
+
+
+class ImageExporter(Button):
+    """ Represents a GUI component that handles the saving of images"""
+    def __init__(self, canvas, *args, **kwargs):
+        super().__init__(*args, **kwargs, command=self.save)
+        self.canvas = canvas
+
+    def save(self):
+        """Create a container in the canvas containing the image located at filepath """
+        filepath = asksaveasfilename(
+            defaultextension=DEFAULT_IMAGE_EXTENSION,
+            filetypes=[e.value for e in ImageExtension],
+        )
+
+        if not filepath:
+            return
+
+        # save the canvas
+        # TODO: this feels hacky, investigate if I can directly export to PNG
+        self.canvas.postscript(file=f'{filepath}.ps')
+        img = Image.open(f'{filepath}.ps')
+        img.save(filepath)
+        remove(f'{filepath}.ps')
 
 
 class FileOpener(Button):
@@ -66,8 +103,8 @@ class FileOpener(Button):
         with open(filepath, 'r') as f:
             content = json.loads(f.read())
 
-        for c in content:
-            self.canvas.containers.append(Container(self.canvas, c['image'], *c['location']))
+        # append all images to the list containers
+        [self.canvas.containers.append(Container(self.canvas, c['image'], *c['location'])) for c in content]
 
         # fire an file updated event
         self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
