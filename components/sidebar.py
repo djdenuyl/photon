@@ -7,7 +7,7 @@ Created on 2022-01-19
 """
 from tkinter import Frame
 from components.counter import Counter
-from handlers.file_handling import Opener, Saver
+from handlers.file_handling import FileOpener, FileSaver, ImageImporter
 
 
 class Sidebar(Frame):
@@ -15,8 +15,9 @@ class Sidebar(Frame):
     def __init__(self, container, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.container = container
-        self.open = Opener(master=self, container=self.container, text='Open')
-        self.save_as = Saver(master=self, container=self.container, text='Save As')
+        self.open = FileOpener(master=self, canvas=self.container, text='Open File')
+        self.save_as = FileSaver(master=self, canvas=self.container, text='Save File As')
+        self._import = ImageImporter(master=self, canvas=self.container, text='Import Image')
         self.counter = Counter(master=self)
 
         self.layout()
@@ -24,4 +25,5 @@ class Sidebar(Frame):
     def layout(self):
         self.open.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         self.save_as.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
-        self.counter.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self._import.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self.counter.grid(row=3, column=0, sticky="ew", padx=5, pady=5)

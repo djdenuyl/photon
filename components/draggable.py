@@ -1,5 +1,5 @@
 """
-Drag and Drop widget container for Images
+Drag and Drop widget canvas for Images
 
 adapted from: https://raw.githubusercontent.com/python/cpython/main/Lib/tkinter/dnd.py
 
