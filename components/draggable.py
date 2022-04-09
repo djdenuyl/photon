@@ -6,56 +6,45 @@ adapted from: https://raw.githubusercontent.com/python/cpython/main/Lib/tkinter/
 author: David den Uyl (ddenuyl@gmail.com)
 date: 2022-01-26
 """
+from logging import debug
 
 
 class Draggable:
     """ A Container for a widget that can be dragged and dropped. It is the liaison between the image and the canvas """
-    def __init__(self, master, widget, anchor, window):
+    def __init__(self, master, widget, window_id):
         self.master = master
         self.widget = widget
-        self.anchor = anchor
-        self.window = window
+        self.window_id = window_id
 
-        self.x_offset = None
-        self.y_offset = None
-        self.x_original = None
-        self.y_original = None
+        self.x_start = None
+        self.y_start = None
 
-        self.widget.bind("<ButtonPress-1>", self.on_click)
+        self.widget.bind("<ButtonPress-1>", self.on_click, add='+')
         self.widget.bind("<B1-Motion>", self.on_drag)
-        self.widget.bind("<ButtonRelease-1>", self.on_drop)
+        # self.widget.bind("<ButtonRelease-1>", self.on_release)
 
     def on_click(self, event):
         """ on click, set the original widget location """
         # collect the x,y event offset
-        self.x_offset = event.x
-        self.y_offset = event.y
-
-        # collect the original x,y coords
-        self.x_original, self.y_original = self.master.coords(self.window)
+        self.x_start = event.x
+        self.y_start = event.y
 
     def on_drag(self, event):
-        """ on drag, move the widget """
-        x, y = self.position(event)
-        self.master.coords(self.window, x, y)
+        """ on drag, move all canvas items with 'selected' tag """
+        # debug(self.master.gettags(self.window_id))
 
-    def on_drop(self, event):
-        """ On drop, delete the original window and create a new one at the new location """
-        x, y = self.position(event)
+        # deltas to move
+        dx = event.x - self.x_start
+        dy = event.y - self.y_start
 
-        # self.master.delete(self.window)
-        # self.window = self.master.create_window(x, y, window=self.widget, anchor="nw")
-        self.master.coords(self.window, x, y)
+        # move all selected
+        [self.master.move(i, dx, dy) for i in self.master.find_withtag('selected')]
 
-    def position(self, event):
-        """ keep track of the widgets position """
-        # where the corner of the canvas is relative to the screen:
-        x_master = self.master.winfo_rootx()
-        y_master = self.master.winfo_rooty()
+        # if 'dragging' not in self.master.gettags(self.window_id):
+        #     self.master.itemconfig(self.window_id, tags=['dragging'])
 
-        # where the pointer is relative to the canvas widget:
-        x = event.x_root - x_master
-        y = event.y_root - y_master
+    # def on_release(self, event):
+    #     """ on release, remove the dragging tag """
+    #     self.master.dtag(self.window_id, 'dragging')
 
-        # compensate for initial pointer offset
-        return x - self.x_offset, y - self.y_offset
+

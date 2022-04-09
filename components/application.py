@@ -10,15 +10,14 @@ from components.main_canvas import MainCanvas
 from components.sidebar import Sidebar
 
 
-NAME = 'Photon Editor - v0.0'
-
-
 class Application(Tk):
+    _name = 'Photon Editor - v0.0'
+
     """ The application """
     def __init__(self, name=None):
         super().__init__()
 
-        self.name = name or NAME
+        self.name = name or self._name
         self.title(self.name)
 
         # init components
