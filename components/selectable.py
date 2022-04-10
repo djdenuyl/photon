@@ -13,27 +13,44 @@ class Selectable:
         self.widget = widget
         self.window_id = window_id_id
 
-        self.widget.bind("<Button-1>", self.on_click, add='+')
+        self.widget.bind("<ButtonPress-1>", self.on_click, add='+')
+        self.widget.bind("<B1-Motion>", self.on_move, add='+')
+        self.widget.bind("<ButtonRelease-1>", self.on_release, add='+')
         self.bbox_id = None
+
+        self.has_moved = False
 
     def on_click(self, event):
         """ on click, execute select function if the widget does not have the 'selected' tag.
         execute deselect function if it does have the 'selected' tag """
-        # if 'dragging' in self.master.gettags(self.window_id):
-        #     return
-
         # if widget already selected, deselect else select
-        if 'selected' in self.master.gettags(self.window_id):
-            func = self.deselect
-        else:
-            func = self.select
-
-        # execute function
-        func()
+        if 'selected' not in self.master.gettags(self.window_id):
+            self.select()
 
         # debug statement
         debug(f'event: {event}, '
-              f'func: {func.__name__}, '
+              f'func: select, '
+              f'id: {self.window_id}, '
+              f'tags: {self.master.gettags(self.window_id)}')
+
+    def on_move(self, event):
+        self.has_moved = True
+
+    def on_release(self, event):
+        """ on click, execute select function if the widget does not have the 'selected' tag.
+        execute deselect function if it does have the 'selected' tag """
+        # if widget already selected, deselect else select
+        if 'selection_event' in self.master.gettags(self.window_id):
+            self.master.dtag(self.window_id, 'selection_event')
+        elif 'selected' in self.master.gettags(self.window_id) \
+                and not self.has_moved:
+            self.deselect()
+
+        self.has_moved = False
+
+        # debug statement
+        debug(f'event: {event}, '
+              f'func: select, '
               f'id: {self.window_id}, '
               f'tags: {self.master.gettags(self.window_id)}')
 
@@ -51,7 +68,7 @@ class Selectable:
         self.bbox_id = self.master.create_rectangle(*self.master.bbox(self.window_id), width=2)
 
         # add 'selected' tag to selected item and its bbox
-        self.master.itemconfig(self.window_id, tags=['selected'])
+        self.master.itemconfig(self.window_id, tags=['selected', 'selection_event'])
         self.master.itemconfig(self.bbox_id, tags=['bbox', 'selected'])
 
     def deselect(self, other=None):

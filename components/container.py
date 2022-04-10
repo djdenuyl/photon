@@ -10,12 +10,12 @@ from tkinter import Label, PhotoImage, NW, Frame
 from components.draggable import Draggable
 from components.selectable import Selectable
 
-X_START = 10
-Y_START = 10
-
 
 class Container(Frame):
     """ A Container for a widget that can be dragged and dropped. It is the liaison between the image and the canvas """
+    _x = 10
+    _y = 10
+
     def __init__(self, master, image_path, x=None, y=None, anchor=None):
         super().__init__(master)
         self.master = master
@@ -23,10 +23,8 @@ class Container(Frame):
         self.image = PhotoImage(file=self.image_path)
         self.anchor = anchor or NW
 
-        self.x_original = None
-        self.y_original = None
-        self.x_start = x or X_START
-        self.y_start = y or Y_START
+        self.x = x or self._x
+        self.y = y or self._y
 
         self.widget = Label(self.master,
                             image=self.image,
@@ -37,12 +35,14 @@ class Container(Frame):
 
         # create the window containing the image
         self.window = self.master \
-            .create_window(self.x_start,
-                           self.y_start,
+            .create_window(self.x,
+                           self.y,
                            window=self.widget,
                            anchor=self.anchor
                            )
 
-        # make canvas draggable
+        # make selectable draggable
         self.selectable = Selectable(self.master, self.widget, self.window)
+
+        # make container draggable
         self.draggable = Draggable(self.master, self.widget, self.window)
