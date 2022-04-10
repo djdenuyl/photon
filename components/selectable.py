@@ -8,6 +8,7 @@ from logging import debug
 
 
 class Selectable:
+    """ A Selectable implements methods to select and deselect a container. """
     def __init__(self, master, widget, window_id_id):
         self.master = master
         self.widget = widget
@@ -22,8 +23,8 @@ class Selectable:
 
     def on_click(self, event):
         """ on click, execute select function if the widget does not have the 'selected' tag.
-        execute deselect function if it does have the 'selected' tag """
-        # if widget already selected, deselect else select
+        no nothing if it is already selected """
+        # if widget not selected, select it
         if 'selected' not in self.master.gettags(self.window_id):
             self.select()
 
@@ -33,13 +34,15 @@ class Selectable:
               f'id: {self.window_id}, '
               f'tags: {self.master.gettags(self.window_id)}')
 
-    def on_move(self, event):
+    def on_move(self, _):
+        """ Set has_moved to true when the selectable moves """
         self.has_moved = True
 
     def on_release(self, event):
-        """ on click, execute select function if the widget does not have the 'selected' tag.
-        execute deselect function if it does have the 'selected' tag """
-        # if widget already selected, deselect else select
+        """ on releasing the button, check if the widget was not selected in the same click event, by checking
+        the selection_event tag. If the tag is present, remove it because release marks the end of the click event.
+        If the widget is selected (has 'selected' tag) and it has not moved during the click event,
+        execute deselect function. Lastly, set has_moved back to false, because is marks the end of the click event. """
         if 'selection_event' in self.master.gettags(self.window_id):
             self.master.dtag(self.window_id, 'selection_event')
         elif 'selected' in self.master.gettags(self.window_id) \
@@ -56,7 +59,7 @@ class Selectable:
 
     def select(self):
         """ finds the ids of currently selected items on the canvas and deselects those if they exist.
-        Draws a bbox around the currently selected item and adds selected tags to the item and its bbox """
+        Draws a bbox around the currently selected item and adds selected tags to the item and its bbox. """
 
         # deselect any already selected widget
         currently_selected = self.master.find_withtag('selected')
@@ -68,8 +71,10 @@ class Selectable:
         self.bbox_id = self.master.create_rectangle(*self.master.bbox(self.window_id), width=2)
 
         # add 'selected' tag to selected item and its bbox
-        self.master.itemconfig(self.window_id, tags=['selected', 'selection_event'])
-        self.master.itemconfig(self.bbox_id, tags=['bbox', 'selected'])
+        self.master.addtag_withtag('selected', self.window_id)
+        self.master.addtag_withtag('selection_event', self.window_id)
+        self.master.addtag_withtag('selected', self.bbox_id)
+        self.master.addtag_withtag('bbox', self.bbox_id)
 
     def deselect(self, other=None):
         """ deselects the objects if other is none else deselects the other object
