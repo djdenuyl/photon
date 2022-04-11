@@ -4,10 +4,10 @@ Make object selectable
 author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-01-30
 """
+from components.selection_arrow import SelectionArrow
 from logging import debug
 from pathlib import Path
-from tkinter import PhotoImage, SE, SW, NE, NW
-from PIL import Image, ImageTk
+from tkinter import SE, SW, NE, NW, S, W, N, E
 
 
 class Selectable:
@@ -89,48 +89,29 @@ class Selectable:
         self.master.addtag_withtag('selected', self.window_id)
         self.master.addtag_withtag('selected', self.bbox_id)
         self.master.addtag_withtag('selection_event', self.window_id)
-        self.master.addtag_withtag('bbox', self.bbox_id)
+        self.master.addtag_withtag('to_delete', self.bbox_id)
 
     def _deselect(self, other=None):
         """ deselects the objects if other is none else deselects the other object
         Also removes the bbox """
-        self.master.delete(self.master.find_withtag('bbox') or self.bbox_id)
+        [self.master.delete(c) for c in (self.master.find_withtag('to_delete') or [self.bbox_id])]
         self.master.dtag(other or self.window_id, 'selected')
 
     def _draw_arrows(self):
         """ draws the resizing arrows around the bounding box. """
+        # collect the window coords
         left, top, right, bottom = self.master.bbox(self.window_id)
+        length = bottom - top
+        width = right - left
 
-        self.pil_image = Image.open(self._arrow_asset_path)
+        # draw the arrows, first the rotated
+        self.a1 = SelectionArrow(self.master, left, top, SE, 45)
+        self.a2 = SelectionArrow(self.master, left, bottom, NE, 135)
+        self.a3 = SelectionArrow(self.master, right, bottom, NW, 225)
+        self.a4 = SelectionArrow(self.master, right, top, SW, 315)
 
-        self.image = ImageTk.PhotoImage(self.pil_image.rotate(45)) # .resize(5, 5)
-
-        image_id = self.master.create_image(left,
-                                            top,
-                                            image=self.image,
-                                            anchor=SE
-                                            )
-
-        # self.master.rotate(image_id, 10)
-
-        image_id = self.master.create_image(right,
-                                            top,
-                                            image=self.image,
-                                            anchor=SW
-                                            )
-
-        image_id = self.master.create_image(left,
-                                            bottom,
-                                            image=self.image,
-                                            anchor=NE
-                                            )
-
-        image_id = self.master.create_image(right,
-                                            bottom,
-                                            image=self.image,
-                                            anchor=NW
-                                            )
-
-# class SelectionArrow:
-#     def __init__(self, image, subsample=(4, 4), ):
-#         self.image = image
+        # then the straights
+        self.a5 = SelectionArrow(self.master, left + width / 2, top, S, 0)
+        self.a8 = SelectionArrow(self.master, left, top + length / 2, E, 90)
+        self.a7 = SelectionArrow(self.master, left + width / 2, bottom, N, 180)
+        self.a6 = SelectionArrow(self.master, right, top + length / 2, W, 270)

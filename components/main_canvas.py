@@ -16,7 +16,7 @@ class MainCanvas(Canvas):
         super().__init__(**kwargs)
         self.containers = []
         self.containers.append(Container(self, image_path=Path('data', 'ball.png')))
-        self.containers.append(Container(self, image_path=Path('data', 'ball.png'), x=200, y=200))
+        self.containers.append(Container(self, image_path=Path('data', 'ball.png'), x=300, y=300))
 
         self.master.bind('a', lambda event: self.print_selected())
         self.bind('<Button-1>', self.deselect_all)
@@ -29,5 +29,5 @@ class MainCanvas(Canvas):
         debug(f'event: {e}, '
               f'func: deselect_all, '
               f'deselecting ids: {self.find_withtag("selected")}')
-        [self.delete(c) for c in self.find_withtag('bbox')]
+        [self.delete(c) for c in self.find_withtag('to_delete')]
         [self.dtag(c, 'selected') for c in self.find_withtag('selected')]
