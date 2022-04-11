@@ -16,7 +16,7 @@ class MainCanvas(Canvas):
         super().__init__(**kwargs)
         self.containers = []
         self.containers.append(Container(self, image_path=Path('data', 'ball.png')))
-        self.containers.append(Container(self, image_path=Path('data', '1000_sun.png'), x=200, y=200))
+        self.containers.append(Container(self, image_path=Path('data', 'ball.png'), x=200, y=200))
 
         self.master.bind('a', lambda event: self.print_selected())
         self.bind('<Button-1>', self.deselect_all)

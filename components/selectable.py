@@ -6,7 +6,8 @@ date: 2022-01-30
 """
 from logging import debug
 from pathlib import Path
-from tkinter import PhotoImage, Label, NW
+from tkinter import PhotoImage, SE, SW, NE, NW
+from PIL import Image, ImageTk
 
 
 class Selectable:
@@ -98,22 +99,38 @@ class Selectable:
 
     def _draw_arrows(self):
         """ draws the resizing arrows around the bounding box. """
-        debug(self.widget.winfo_rootx())
-        debug(self.widget.winfo_rooty())
+        left, top, right, bottom = self.master.bbox(self.window_id)
 
-        # self.image = PhotoImage(file=self._arrow_asset_path)
-        #
-        # self.arrow_label = Label(self.master,
-        #                     image=self.image,
-        #                     height=self.image.height(),
-        #                     width=self.image.width(),
-        #                     bg='white'
-        #                     )
-        #
-        # # create the window containing the image
-        # self.arrow_window_id = self.master \
-        #     .create_window(self.window.,
-        #                    self.,
-        #                    window=self.arrow_label,
-        #                    anchor=NW
-        #                    )
+        self.pil_image = Image.open(self._arrow_asset_path)
+
+        self.image = ImageTk.PhotoImage(self.pil_image.rotate(45)) # .resize(5, 5)
+
+        image_id = self.master.create_image(left,
+                                            top,
+                                            image=self.image,
+                                            anchor=SE
+                                            )
+
+        # self.master.rotate(image_id, 10)
+
+        image_id = self.master.create_image(right,
+                                            top,
+                                            image=self.image,
+                                            anchor=SW
+                                            )
+
+        image_id = self.master.create_image(left,
+                                            bottom,
+                                            image=self.image,
+                                            anchor=NE
+                                            )
+
+        image_id = self.master.create_image(right,
+                                            bottom,
+                                            image=self.image,
+                                            anchor=NW
+                                            )
+
+# class SelectionArrow:
+#     def __init__(self, image, subsample=(4, 4), ):
+#         self.image = image
