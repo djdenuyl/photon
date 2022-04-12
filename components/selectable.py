@@ -4,11 +4,20 @@ Make object selectable
 author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-01-30
 """
+from components.selection_arrow import SelectionArrow
 from logging import debug
+from pathlib import Path
+from tkinter import SE, SW, NE, NW, S, W, N, E
 
 
 class Selectable:
     """ A Selectable implements methods to select and deselect a container. """
+    _bbox_width = 2
+    _bbox_dash_length = 10
+    _bbox_dash_spacing = 10
+
+    _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
+
     def __init__(self, master, widget, window_id_id):
         self.master = master
         self.widget = widget
@@ -26,7 +35,7 @@ class Selectable:
         no nothing if it is already selected """
         # if widget not selected, select it
         if 'selected' not in self.master.gettags(self.window_id):
-            self.select()
+            self._select()
 
         # debug statement
         debug(f'event: {event}, '
@@ -47,7 +56,7 @@ class Selectable:
             self.master.dtag(self.window_id, 'selection_event')
         elif 'selected' in self.master.gettags(self.window_id) \
                 and not self.has_moved:
-            self.deselect()
+            self._deselect()
 
         self.has_moved = False
 
@@ -57,7 +66,7 @@ class Selectable:
               f'id: {self.window_id}, '
               f'tags: {self.master.gettags(self.window_id)}')
 
-    def select(self):
+    def _select(self):
         """ finds the ids of currently selected items on the canvas and deselects those if they exist.
         Draws a bbox around the currently selected item and adds selected tags to the item and its bbox. """
 
@@ -65,19 +74,44 @@ class Selectable:
         currently_selected = self.master.find_withtag('selected')
         if currently_selected is not None:
             for c in currently_selected:
-                self.deselect(c)
+                self._deselect(c)
 
         # draw the bbox around the selected widget
-        self.bbox_id = self.master.create_rectangle(*self.master.bbox(self.window_id), width=2)
+        self.bbox_id = self.master.create_rectangle(
+            *self.master.bbox(self.window_id),
+            dash=(self._bbox_dash_length, self._bbox_dash_spacing),
+            width=self._bbox_width
+        )
+
+        self._draw_arrows()
 
         # add 'selected' tag to selected item and its bbox
         self.master.addtag_withtag('selected', self.window_id)
-        self.master.addtag_withtag('selection_event', self.window_id)
         self.master.addtag_withtag('selected', self.bbox_id)
-        self.master.addtag_withtag('bbox', self.bbox_id)
+        self.master.addtag_withtag('selection_event', self.window_id)
+        self.master.addtag_withtag('to_delete', self.bbox_id)
 
-    def deselect(self, other=None):
+    def _deselect(self, other=None):
         """ deselects the objects if other is none else deselects the other object
         Also removes the bbox """
-        self.master.delete(self.master.find_withtag('bbox') or self.bbox_id)
+        [self.master.delete(c) for c in (self.master.find_withtag('to_delete') or [self.bbox_id])]
         self.master.dtag(other or self.window_id, 'selected')
+
+    def _draw_arrows(self):
+        """ draws the resizing arrows around the bounding box. """
+        # collect the window coords
+        left, top, right, bottom = self.master.bbox(self.window_id)
+        length = bottom - top
+        width = right - left
+
+        # draw the arrows, first the rotated
+        self.a1 = SelectionArrow(self.master, left, top, SE, 45)
+        self.a2 = SelectionArrow(self.master, left, bottom, NE, 135)
+        self.a3 = SelectionArrow(self.master, right, bottom, NW, 225)
+        self.a4 = SelectionArrow(self.master, right, top, SW, 315)
+
+        # then the straights
+        self.a5 = SelectionArrow(self.master, left + width / 2, top, S, 0)
+        self.a8 = SelectionArrow(self.master, left, top + length / 2, E, 90)
+        self.a7 = SelectionArrow(self.master, left + width / 2, bottom, N, 180)
+        self.a6 = SelectionArrow(self.master, right, top + length / 2, W, 270)
