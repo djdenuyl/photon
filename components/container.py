@@ -6,9 +6,12 @@ adapted from: https://raw.githubusercontent.com/python/cpython/main/Lib/tkinter/
 author: David den Uyl (ddenuyl@gmail.com)
 date: 2022-01-26
 """
-from tkinter import Label, PhotoImage, NW, Frame
+from PIL import Image
+from PIL.ImageTk import PhotoImage
+from tkinter import Label, NW, Frame
 from components.draggable import Draggable
 from components.selectable import Selectable
+from components.scalable import Scalable
 
 
 class Container(Frame):
@@ -20,16 +23,17 @@ class Container(Frame):
         super().__init__(master)
         self.master = master
         self.image_path = image_path
-        self.image = PhotoImage(file=self.image_path)
+        self.image = Image.open(self.image_path)
+        self.image_tk = PhotoImage(self.image, Image.ANTIALIAS)
         self.anchor = anchor or NW
 
         self.x = x or self._x
         self.y = y or self._y
 
         self.widget = Label(self.master,
-                            image=self.image,
-                            height=self.image.height(),
-                            width=self.image.width(),
+                            image=self.image_tk,
+                            height=self.image_tk.height(),
+                            width=self.image_tk.width(),
                             bg='white'
                             )
 
@@ -41,8 +45,11 @@ class Container(Frame):
                            anchor=self.anchor
                            )
 
-        # make selectable draggable
+        # make container selectable
         self.selectable = Selectable(self.master, self.widget, self.window)
 
         # make container draggable
         self.draggable = Draggable(self.master, self.widget, self.window)
+
+        # make container scalable
+        self.scalable = Scalable(self.master, self.widget, self.window, self)

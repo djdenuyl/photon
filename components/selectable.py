@@ -83,8 +83,6 @@ class Selectable:
             width=self._bbox_width
         )
 
-        self._draw_arrows()
-
         # add 'selected' tag to selected item and its bbox
         self.master.addtag_withtag('selected', self.window_id)
         self.master.addtag_withtag('selected', self.bbox_id)

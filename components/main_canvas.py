@@ -18,11 +18,8 @@ class MainCanvas(Canvas):
         self.containers.append(Container(self, image_path=Path('data', 'ball.png')))
         self.containers.append(Container(self, image_path=Path('data', 'ball.png'), x=300, y=300))
 
-        self.master.bind('a', lambda event: self.print_selected())
-        self.bind('<Button-1>', self.deselect_all)
-
-    def print_selected(self):
-        debug(f"all selected: {self.find_withtag('selected')}")
+        # bindings
+        # self.bind('<Button-1>', self.deselect_all)
 
     def deselect_all(self, e):
         """ remove selection from all objects on the canvas"""
