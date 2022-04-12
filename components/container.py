@@ -52,4 +52,4 @@ class Container(Frame):
         self.draggable = Draggable(self.master, self.widget, self.window)
 
         # make container scalable
-        self.scalable = Scalable(self.master, self.widget, self.window, self)
+        self.scalable = Scalable(self)

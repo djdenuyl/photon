@@ -4,10 +4,8 @@ Make object selectable
 author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-01-30
 """
-from components.selection_arrow import SelectionArrow
 from logging import debug
 from pathlib import Path
-from tkinter import SE, SW, NE, NW, S, W, N, E
 
 
 class Selectable:
@@ -94,22 +92,3 @@ class Selectable:
         Also removes the bbox """
         [self.master.delete(c) for c in (self.master.find_withtag('to_delete') or [self.bbox_id])]
         self.master.dtag(other or self.window_id, 'selected')
-
-    def _draw_arrows(self):
-        """ draws the resizing arrows around the bounding box. """
-        # collect the window coords
-        left, top, right, bottom = self.master.bbox(self.window_id)
-        length = bottom - top
-        width = right - left
-
-        # draw the arrows, first the rotated
-        self.a1 = SelectionArrow(self.master, left, top, SE, 45)
-        self.a2 = SelectionArrow(self.master, left, bottom, NE, 135)
-        self.a3 = SelectionArrow(self.master, right, bottom, NW, 225)
-        self.a4 = SelectionArrow(self.master, right, top, SW, 315)
-
-        # then the straights
-        self.a5 = SelectionArrow(self.master, left + width / 2, top, S, 0)
-        self.a8 = SelectionArrow(self.master, left, top + length / 2, E, 90)
-        self.a7 = SelectionArrow(self.master, left + width / 2, bottom, N, 180)
-        self.a6 = SelectionArrow(self.master, right, top + length / 2, W, 270)

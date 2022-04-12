@@ -2,7 +2,7 @@
 Make object scalable
 
 author: David den Uyl (djdenuyl@gmail.nl)
-date: 2022-01-30
+date: 2022-04-10
 """
 from components.selection_arrow import SelectionArrow
 from logging import debug
@@ -14,11 +14,11 @@ class Scalable:
     """ A Scalable implements methods to scale a container. """
     _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
 
-    def __init__(self, master, widget, window_id, label):
-        self.master = master
-        self.widget = widget
-        self.window_id = window_id
-        self.label = label
+    def __init__(self, container):
+        self.container = container
+        self.master = self.container.master
+        self.widget = self.container.widget
+        self.window_id = self.container.window
 
         self.widget.bind("<ButtonPress-1>", self.on_click, add='+')
         # self.widget.bind("<B1-Motion>", self.on_move, add='+')
@@ -91,4 +91,4 @@ class Scalable:
         # self.a5 = SelectionArrow(self.master, left + width / 2, top, S, 0)
         # self.a8 = SelectionArrow(self.master, left, top + length / 2, E, 90)
         # self.a7 = SelectionArrow(self.master, left + width / 2, bottom, N, 180)
-        self.a6 = SelectionArrow(self.master, self.label, right, top + length / 2, W, 270)
+        self.a6 = SelectionArrow(self.master, self.container, right, top + length / 2, W, 270)
