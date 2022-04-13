@@ -40,16 +40,17 @@ class Scalable:
         length = bottom - top
         width = right - left
 
-        order = [S, SE, E, NE, N, NW, W, SW]
-
-        # draw the arrows, first the rotated
-        # self.a1 = SelectionArrow(self.container, left, top, SE, 45)
-        # self.a2 = SelectionArrow(self.container, left, bottom, NE, 135)
-        # self.a3 = SelectionArrow(self.container, right, bottom, NW, 225)
-        # self.a4 = SelectionArrow(self.container, right, top, SW, 315)
+        # directions = [S, SE, E, NE, N, NW, W, SW]
+        # xs = [left + width / 2, left, left, left, right - width / 2, right, right, right]
+        # ys = [top, top, top + length / 2, bottom, bottom, bottom, bottom - length / 2, top]
         #
-        # # # then the straights
-        # self.a5 = SelectionArrow(self.container, left + width / 2, top, S, 0)
-        # self.a8 = SelectionArrow(self.container, left, top + length / 2, E, 90)
-        # self.a7 = SelectionArrow(self.container, left + width / 2, bottom, N, 180)
-        self.a6 = SelectionArrow(self.container, right, top + length / 2, W, 270)
+        # arrows = []
+        # rotation = 0
+        # for d, x, y in zip(directions, xs, ys):
+        #     arrows.append(
+        #         SelectionArrow(self.container, x, y, d, rotation, )
+        #     )
+        #
+        #     rotation += 45
+        SelectionArrow(self.container, right, top + length / 2, W, NW, 270)
+        SelectionArrow(self.container, left, top + length / 2, E, NE, 90)

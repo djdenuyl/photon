@@ -8,7 +8,7 @@ date: 2022-01-26
 """
 from PIL import Image
 from PIL.ImageTk import PhotoImage
-from tkinter import NW
+from tkinter import NW, NE
 from components.draggable import Draggable
 from components.selectable import Selectable
 from components.scalable import Scalable
