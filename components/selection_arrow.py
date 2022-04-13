@@ -48,27 +48,38 @@ class SelectionArrow:
         return self.container.canvas.gettags(self.id)
 
     def on_click(self, event):
+        """ on click, collect the events x,y coords """
         debug(f'event: {event}, {self.__class__}')
 
-        # collect the x,y event
+        # collect the event x, y
         self._x_start = event.x
         self._y_start = event.y
 
     def on_move(self, event):
+        """ on move, resize the image along the direction of the arrow. Also resize the bbox and arrow positions """
+        # the left, top, right and bottom coord
         l, t, r, b = self.container.canvas.bbox(self.container.id)
+
+        # the containers current dimensions
         w = r - l
         h = b - t
 
-        dx = int(event.x - self._x_start)
-        dy = int(event.y - self._y_start)
-        x_mv = int(w + dx)
-        y_mv = int(h)
+        # the amount of movement in x and y since last event
+        dx = event.x - self._x_start
+        dy = event.y - self._y_start
 
+        # the new dimensions of the container
+        x_mv = int(w + dx)
+        y_mv = int(h) # + dy
+
+        # resize the image and update the canvas
         self.container.image_tk = PhotoImage(self.container.image.resize((x_mv, y_mv)))
         self.container.canvas.itemconfig(self.container.id, image=self.container.image_tk)
 
+        # scale the arrows and bbox
         for a in self.container.canvas.find_withtag('to_delete'):
             self.container.canvas.scale(a, l, b - h // 2, x_mv / w, h / h)
 
+        # update the event x, y
         self._x_start = event.x
         self._y_start = event.y
