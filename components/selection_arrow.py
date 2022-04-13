@@ -65,10 +65,11 @@ class SelectionArrow:
         x_mv = int(w + dx)
         y_mv = int(h)
 
-        print(l, t, r, b)
+        # print(l, t, r, b)
 
         self.container.image_tk = PhotoImage(self.container.image.resize((x_mv, y_mv)))
-        self.canvas.create_image(self.container.x, self.container.y, image=self.container.image_tk, anchor=self.container.anchor)
+        # self.canvas.create_image(self.container.x, self.container.y, image=self.container.image_tk, anchor=self.container.anchor)
+        self.canvas.itemconfig(self.container.id, image=self.container.image_tk)
 
-        # self.canvas.scale(self.canvas_id, l, t, x_mv / w,  h / h)
-        self.canvas.move(self.canvas_id)
+        self.canvas.scale(self.canvas_id, l, b - w // 2, x_mv / w,  h / h)
+        # self.canvas.move(self.canvas_id, dx, 0)
