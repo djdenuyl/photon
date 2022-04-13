@@ -96,7 +96,7 @@ class FileOpener(Button):
             return
 
         # remove old objects
-        [self.canvas.delete(c.id) for c in self.canvas.containers]
+        self.canvas.delete('all')
         self.canvas.containers = []
 
         # create new objects
@@ -151,7 +151,7 @@ class Reset(Button):
     def open(self):
         """Open a file for editing."""
         # remove old objects
-        [self.canvas.delete(c.id) for c in self.canvas.containers]
+        self.canvas.delete('all')
         self.canvas.containers = []
 
         # create new objects

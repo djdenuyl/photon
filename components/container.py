@@ -8,19 +8,18 @@ date: 2022-01-26
 """
 from PIL import Image
 from PIL.ImageTk import PhotoImage
-from tkinter import Label, NW, Frame
+from tkinter import NW
 from components.draggable import Draggable
 from components.selectable import Selectable
 from components.scalable import Scalable
 
 
-class Container(Frame):
+class Container:
     """ A Container for a widget that can be dragged and dropped. It is the liaison between the image and the canvas """
     _x = 10
     _y = 10
 
     def __init__(self, canvas, image_path, x=None, y=None, anchor=None):
-        super().__init__(canvas)
         self.canvas = canvas
         self.image_path = image_path
         self.image = Image.open(self.image_path)
@@ -30,28 +29,12 @@ class Container(Frame):
         self.x = x or self._x
         self.y = y or self._y
 
-        self.id = self.canvas.\
-            create_image(self.x,
-                         self.y,
-                         image=self.image_tk,
-                         anchor=self.anchor
-                         )
-
-        #
-        # self.widget = Label(self.master,
-        #                     image=self.image_tk,
-        #                     height=self.image_tk.height(),
-        #                     width=self.image_tk.width(),
-        #                     bg='white'
-        #                     )
-        #
-        # # create the window containing the image
-        # self.window = self.master \
-        #     .create_window(self.x,
-        #                    self.y,
-        #                    window=self.widget,
-        #                    anchor=self.anchor
-        #                    )
+        self.id = self.canvas.create_image(
+            self.x,
+            self.y,
+            image=self.image_tk,
+            anchor=self.anchor,
+        )
 
         # make container selectable
         self.selectable = Selectable(self)
