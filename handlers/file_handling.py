@@ -38,7 +38,7 @@ class NewFileCreator(Button):
 
     def create_new_file(self):
         """Create a container in the canvas containing the image located at filepath """
-        [self.canvas.delete(c.window) for c in self.canvas.containers]
+        [self.canvas.delete(c.id) for c in self.canvas.containers]
         self.canvas.containers = []
 
 
@@ -83,7 +83,7 @@ class ImageExporter(Button):
 
 
 class FileOpener(Button):
-    """ Represents a GUI component that handles opening of .ptn files"""
+    """ Represents a GUI component that handles opening of .hv files"""
     def __init__(self, canvas, *args, **kwargs):
         super().__init__(*args, **kwargs, command=self.open)
         self.canvas = canvas
@@ -96,7 +96,7 @@ class FileOpener(Button):
             return
 
         # remove old objects
-        [self.canvas.delete(c.window) for c in self.canvas.containers]
+        [self.canvas.delete(c.id) for c in self.canvas.containers]
         self.canvas.containers = []
 
         # create new objects
@@ -130,7 +130,7 @@ class FileSaver(Button):
         content = [
             {
                 'image': join(getcwd(), c.image_path),
-                'location': self.canvas.coords(c.window)
+                'location': self.canvas.coords(c.id)
             } for c in self.canvas.containers
         ]
 
@@ -139,3 +139,24 @@ class FileSaver(Button):
 
         # fire an file updated event
         self.event_generate('<<FileUpdated>>', data=filepath, when='tail')
+
+
+# TODO: deleteme
+class Reset(Button):
+    """ Represents a GUI component that resets to test"""
+    def __init__(self, canvas, *args, **kwargs):
+        super().__init__(*args, **kwargs, command=self.open)
+        self.canvas = canvas
+
+    def open(self):
+        """Open a file for editing."""
+        # remove old objects
+        [self.canvas.delete(c.id) for c in self.canvas.containers]
+        self.canvas.containers = []
+
+        # create new objects
+        with open(join('data', 'test.hv'), 'r') as f:
+            content = json.loads(f.read())
+
+        # append all images to the list containers
+        [self.canvas.containers.append(Container(self.canvas, c['image'], *c['location'])) for c in content]

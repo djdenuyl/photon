@@ -7,7 +7,7 @@ Created on 2022-01-19
 """
 from tkinter import Frame
 from components.counter import Counter
-from handlers.file_handling import FileOpener, FileSaver, ImageImporter, NewFileCreator, ImageExporter
+from handlers.file_handling import FileOpener, FileSaver, ImageImporter, NewFileCreator, ImageExporter, Reset
 
 
 class Sidebar(Frame):
@@ -22,6 +22,9 @@ class Sidebar(Frame):
         self._export = ImageExporter(master=self, canvas=self.container, text='Export Image')
         self.counter = Counter(master=self)
 
+        # TODO: deleteme
+        self.reset = Reset(master=self, canvas=self.container, text='Reset Test')
+
         self.layout()
 
     def layout(self):
@@ -31,3 +34,4 @@ class Sidebar(Frame):
         self._import.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
         self._export.grid(row=4, column=0, sticky="ew", padx=5, pady=5)
         self.counter.grid(row=5, column=0, sticky="ew", padx=5, pady=5)
+        self.reset.grid(row=6, column=0, sticky="ew", padx=5, pady=5)

@@ -6,8 +6,9 @@ author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-04-11
 """
 from dataclasses import dataclass, field
+from logging import debug
 from pathlib import Path
-from tkinter import Canvas, Label
+from tkinter import Canvas
 from typing import Tuple
 from PIL import Image
 from PIL.ImageTk import PhotoImage
@@ -17,7 +18,7 @@ from PIL.ImageTk import PhotoImage
 @dataclass
 class SelectionArrow:
     canvas: Canvas
-    master: None
+    container: None
     x: int
     y: int
     anchor: str
@@ -40,35 +41,34 @@ class SelectionArrow:
         self.canvas.addtag_withtag('to_delete', self.canvas_id)
 
         # add bindings
+        self.canvas.tag_bind(self.canvas_id, '<ButtonPress-1>', self.on_click, add='+')
         self.canvas.tag_bind(self.canvas_id, '<B1-Motion>', self.on_move, add='+')
-        # self.canvas.tag_bind(self.canvas_id, '<B1-Motion>', self.on_move, add='+')
 
     @property
     def tags(self):
         return self.canvas.gettags(self.canvas_id)
 
+    def on_click(self, event):
+        debug(f'event: {event}, {self.__class__}')
+
+        # collect the x,y event
+        self.x_start = event.x
+        self.y_start = event.y
+
     def on_move(self, event):
-        self.canvas.delete(self.master.window)
+        l, t, r, b = self.canvas.bbox(self.container.id)
+        w = r - l
+        h = b - t
 
-        dx = event.x - self.master.x
-        dy = event.y - self.master.y
+        dx = int(event.x - self.x_start)
+        dy = int(event.y - self.y_start)
+        x_mv = int(w + dx)
+        y_mv = int(h)
 
-        self.master.image_tk = PhotoImage(self.master.image.resize((dx, dy)))
-        self.canvas.create_image(self.x, self.y, image=self.master.image_tk, anchor=self.master.anchor)
+        print(l, t, r, b)
 
-        # self.master.widget = Label(self.canvas,
-        #                            image=self.master.image_tk,
-        #                            height=dy,
-        #                            width=dx,
-        #                            bg='white'
-        #                            )
-        #
-        # # create the window containing the image
-        # self.master.window = self.canvas \
-        #     .create_window(self.master.x,
-        #                    self.master.y,
-        #                    window=self.master.widget,
-        #                    anchor=self.anchor
-        #                    )
+        self.container.image_tk = PhotoImage(self.container.image.resize((x_mv, y_mv)))
+        self.canvas.create_image(self.container.x, self.container.y, image=self.container.image_tk, anchor=self.container.anchor)
 
-        self.canvas.scale(self.canvas_id, 0, 0, 1.05, 1.05)
+        # self.canvas.scale(self.canvas_id, l, t, x_mv / w,  h / h)
+        self.canvas.move(self.canvas_id)

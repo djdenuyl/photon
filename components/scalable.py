@@ -16,11 +16,9 @@ class Scalable:
 
     def __init__(self, container):
         self.container = container
-        self.master = self.container.master
-        self.widget = self.container.widget
-        self.window_id = self.container.window
+        self.canvas = self.container.canvas
 
-        self.widget.bind("<ButtonPress-1>", self.on_click, add='+')
+        self.canvas.tag_bind(self.container.id, "<ButtonPress-1>", self.on_click, add='+')
         # self.widget.bind("<B1-Motion>", self.on_move, add='+')
         # self.widget.bind("<ButtonRelease-1>", self.on_release, add='+')
         # self.bbox_id = None
@@ -31,14 +29,14 @@ class Scalable:
         """ on click, execute select function if the widget does not have the 'selected' tag.
         no nothing if it is already selected """
         # if widget not selected, select it
-        if 'selected' in self.master.gettags(self.window_id):
+        if 'selected' in self.canvas.gettags(self.container.id):
             self._draw_arrows()
 
         # debug statement
         debug(f'event: {event}, '
               f'func: select, '
-              f'id: {self.window_id}, '
-              f'tags: {self.master.gettags(self.window_id)}')
+              f'id: {self.container.id}, '
+              f'tags: {self.canvas.gettags(self.container.id)}')
     #
     # def on_move(self, _):
     #     """ Set has_moved to true when the selectable moves """
@@ -77,7 +75,7 @@ class Scalable:
     def _draw_arrows(self):
         """ draws the resizing arrows around the bounding box. """
         # collect the window coords
-        left, top, right, bottom = self.master.bbox(self.window_id)
+        left, top, right, bottom = self.canvas.bbox(self.container.id)
         length = bottom - top
         width = right - left
 
@@ -91,4 +89,4 @@ class Scalable:
         # self.a5 = SelectionArrow(self.master, left + width / 2, top, S, 0)
         # self.a8 = SelectionArrow(self.master, left, top + length / 2, E, 90)
         # self.a7 = SelectionArrow(self.master, left + width / 2, bottom, N, 180)
-        self.a6 = SelectionArrow(self.master, self.container, right, top + length / 2, W, 270)
+        self.a6 = SelectionArrow(self.canvas, self.container, right, top + length / 2, W, 270)

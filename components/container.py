@@ -19,9 +19,9 @@ class Container(Frame):
     _x = 10
     _y = 10
 
-    def __init__(self, master, image_path, x=None, y=None, anchor=None):
-        super().__init__(master)
-        self.master = master
+    def __init__(self, canvas, image_path, x=None, y=None, anchor=None):
+        super().__init__(canvas)
+        self.canvas = canvas
         self.image_path = image_path
         self.image = Image.open(self.image_path)
         self.image_tk = PhotoImage(self.image, Image.ANTIALIAS)
@@ -30,26 +30,34 @@ class Container(Frame):
         self.x = x or self._x
         self.y = y or self._y
 
-        self.widget = Label(self.master,
-                            image=self.image_tk,
-                            height=self.image_tk.height(),
-                            width=self.image_tk.width(),
-                            bg='white'
-                            )
+        self.id = self.canvas.\
+            create_image(self.x,
+                         self.y,
+                         image=self.image_tk,
+                         anchor=self.anchor
+                         )
 
-        # create the window containing the image
-        self.window = self.master \
-            .create_window(self.x,
-                           self.y,
-                           window=self.widget,
-                           anchor=self.anchor
-                           )
+        #
+        # self.widget = Label(self.master,
+        #                     image=self.image_tk,
+        #                     height=self.image_tk.height(),
+        #                     width=self.image_tk.width(),
+        #                     bg='white'
+        #                     )
+        #
+        # # create the window containing the image
+        # self.window = self.master \
+        #     .create_window(self.x,
+        #                    self.y,
+        #                    window=self.widget,
+        #                    anchor=self.anchor
+        #                    )
 
         # make container selectable
-        self.selectable = Selectable(self.master, self.widget, self.window)
+        self.selectable = Selectable(self)
 
         # make container draggable
-        self.draggable = Draggable(self.master, self.widget, self.window)
+        self.draggable = Draggable(self)
 
         # make container scalable
         self.scalable = Scalable(self)
