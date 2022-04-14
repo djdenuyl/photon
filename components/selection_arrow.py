@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from logging import debug
 from pathlib import Path
+from time import sleep
+from tkinter import NE
 from typing import Tuple
 from PIL import Image
 from PIL.ImageTk import PhotoImage
@@ -105,7 +107,7 @@ class SelectionArrow:
 
         # scale the arrows and bbox
         for a in self.container.canvas.find_withtag('to_delete'):
-            self.container.canvas.scale(a, z, b - h // 2, x_mv / w, h / h)
+            self.container.canvas.scale(a, z, b - h // 2, x_mv / w, y_mv / h)
 
         # update the event x, y
         self._x_start = event.x
@@ -121,14 +123,18 @@ class SelectionArrow:
         #   2. store these in a dict
         #   3. lookup the coord values corresponding to the anchor
         #   4. move the container to the new coords
-        #   5. update the anchor point (this will cause it to move back to the original bboz)
+        #   5. update the anchor point (this will cause it to move back to the original bbox)
         print(anchor)
         print(new_anchor)
+        l, t, r, b = self.container.canvas.bbox(self.container.id)
+        self.bbox_dct = dict(l=l, t=t, r=r, b=b)
+        print(self.bbox_dct)
 
         if anchor != new_anchor:
-            l, t, r, b = self.container.canvas.bbox(self.container.id)
-            self.bbox_dct = dict(l=l, t=t, r=r, b=b)
+            print('current anchor point')
+            print([self.bbox_dct.get(a) for a in direction.get(anchor)])
+            print('new anchor point')
             args = [self.bbox_dct.get(a) for a in direction.get(new_anchor)]
-
-            self.container.canvas.moveto(self.container.id, *args)
+            print(args)
+            self.container.canvas.move(self.container.id, args[0], args[1])
             self.container.canvas.itemconfig(self.container.id, anchor=new_anchor)

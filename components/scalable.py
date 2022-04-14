@@ -52,5 +52,5 @@ class Scalable:
         #     )
         #
         #     rotation += 45
-        SelectionArrow(self.container, right, top + length / 2, W, NW, 270)
-        SelectionArrow(self.container, left, top + length / 2, E, NE, 90)
+        SelectionArrow(self.container, right, top + length / 2, W, SW, 270)
+        SelectionArrow(self.container, left, top + length / 2, E, SE, 90)
