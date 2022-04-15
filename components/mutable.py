@@ -23,9 +23,21 @@ class Mutable:
         """ get the container bbox """
         return self.canvas.bbox(self.container.id)
 
-    def _add_binding(self, button, function):
+    @property
+    def bbox_dict(self):
+        """ get a dict of the CURRENT bbox of the container """
+        l, t, r, b = self.bbox
+        return {'l': l, 't': t, 'r': r, 'b': b}
+
+    @property
+    def dimensions(self):
+        """ get the CURRENT dimensions of the container """
+        l, t, r, b = self.bbox
+        return r - l, b - t
+
+    def _add_binding(self, button, function, _id=None):
         """ add a binding to the container """
-        self.canvas.tag_bind(self.container.id, button, function, add='+')
+        self.canvas.tag_bind(_id or self.container.id, button, function, add='+')
 
     def _add_tag(self, tag, _id=None):
         """ add a tag to _id, if _id is none adds the tag to the container"""

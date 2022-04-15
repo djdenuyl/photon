@@ -5,14 +5,13 @@ widget in the arrow direction.
 author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-04-11
 """
-from dataclasses import dataclass, field
 from logging import debug
 from pathlib import Path
 from tkinter import S, W, N, E
-from typing import Tuple
+from typing import Tuple, Optional
 from PIL import Image
 from PIL.ImageTk import PhotoImage
-
+from components.mutable import Mutable
 
 direction = {
     'n': ('r', 't'),
@@ -26,59 +25,39 @@ direction = {
 }
 
 
-@dataclass
-class ScaleArrow:
-    container: None
-    x: int
-    y: int
-    anchor: str  # the anchorage of the arrow relative to its container
-    rotation: int
-    size: Tuple[int, int] = (25, 25)
-    id: int = field(init=False)
-    image: Image = field(init=False)
-    image_tk: PhotoImage = field(init=False)
+class ScaleArrow(Mutable):
+    _size: Tuple[int, int] = (25, 25)
     _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
-    _event_x: int = field(init=False)
-    _event_y: int = field(init=False)
 
-    def __post_init__(self):
+    def __init__(self, container, x, y, anchor, rotation, size=None):
+        super().__init__(container)
+        self.x: int = x
+        self.y: int = y
+        self.anchor: str = anchor
+        self.rotation: int = rotation
+        self.size: Tuple[int, int] = size or self._size
+        self._event_x: Optional[int] = None
+        self._event_y: Optional[int] = None
+
         # render the asset
         self.image = Image.open(self._arrow_asset_path)
         self.image_tk = PhotoImage(self.image.rotate(self.rotation).resize(self.size), Image.ANTIALIAS)
-        self.id = self.container.canvas.create_image(self.x, self.y, image=self.image_tk, anchor=self.anchor)
+        self.id = self.canvas.create_image(self.x, self.y, image=self.image_tk, anchor=self.anchor)
 
         # add tags
-        self.container.canvas.addtag_withtag('scale_arrow', self.id)
-        self.container.canvas.addtag_withtag('selected', self.id)
-        self.container.canvas.addtag_withtag('to_delete', self.id)
+        self._add_tag('scale_arrow', self.id)
+        self._add_tag('selected', self.id)
+        self._add_tag('to_delete', self.id)
 
         # add bindings
-        self.container.canvas.tag_bind(self.id, '<ButtonPress-1>', self.on_click, add='+')
-        self.container.canvas.tag_bind(self.id, '<B1-Motion>', self.on_move, add='+')
-        self.container.canvas.tag_bind(self.id, '<ButtonRelease-1>', self.on_release, add='+')
-
-    @property
-    def tags(self):
-        """ get all tags for this object """
-        return self.container.canvas.gettags(self.id)
+        self._add_binding('<ButtonPress-1>', self.on_click, self.id)
+        self._add_binding('<B1-Motion>', self.on_move, self.id)
+        self._add_binding('<ButtonRelease-1>', self.on_release)
 
     @property
     def container_anchor(self):
         """ get the CURRENT anchor for the container. NB. self.container.anchor gets the INITIAL anchor """
         return self.container.canvas.itemcget(self.container.id, "anchor")
-
-    @property
-    def container_bbox(self):
-        """ get the CURRENT bbox of the container """
-        l, t, r, b = self.container.canvas.bbox(self.container.id)
-        return dict(l=l, t=t, r=r, b=b)
-
-    @property
-    def container_dimensions(self):
-        """ get the CURRENT dimensions of the container """
-        l, t, r, b = [v for _, v in self.container_bbox.items()]
-        # return the width, height
-        return r - l, b - t
 
     def on_click(self, event):
         """ on click, collect the events x,y coords and set the anchor to the scale anchor for this arrow """
@@ -94,7 +73,7 @@ class ScaleArrow:
     def on_move(self, event):
         """ on move, resize the image along the direction of the arrow. Also resize the bbox and arrow positions """
         # calculate container dimensions
-        w0, h0 = self.container_dimensions
+        w0, h0 = self.dimensions
 
         # the amount of movement in x and y since last event
         dx = event.x - self._event_x
@@ -172,10 +151,10 @@ class ScaleArrow:
         """ given the cardinal direction, return the coords of the current containers bbox
         offset by half the width / length depending on the cardinal direction """
         # get the coords for the anchor
-        x, y = [self.container_bbox.get(a) for a in direction.get(anchor)]
+        x, y = [self.bbox_dict.get(a) for a in direction.get(anchor)]
 
         # determine the current width and height
-        w, h = self.container_dimensions
+        w, h = self.dimensions
 
         # offset if needed
         if anchor == S:
