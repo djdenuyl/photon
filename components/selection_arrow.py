@@ -6,28 +6,32 @@ author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-04-11
 """
 from dataclasses import dataclass, field
-from enum import Enum
 from logging import debug
 from pathlib import Path
+from tkinter import S, W, N, E
 from typing import Tuple
 from PIL import Image
 from PIL.ImageTk import PhotoImage
 
 
 direction = {
+    'n': ('r', 't'),
     'ne': ('r', 't'),
-    'nw': ('l', 't'),
+    'e': ('r', 't'),
     'se': ('r', 'b'),
-    'sw': ('l', 'b')
+    's': ('l', 'b'),
+    'sw': ('l', 'b'),
+    'w': ('l', 'b'),
+    'nw': ('l', 't')
 }
+
 
 @dataclass
 class SelectionArrow:
     container: None
     x: int
     y: int
-    anchor: str
-    new_anchor: str
+    anchor: str  # the anchorage of the arrow relative to its container
     rotation: int
     size: Tuple[int, int] = (25, 25)
     id: int = field(init=False)
@@ -36,7 +40,6 @@ class SelectionArrow:
     _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
     _x_start = None
     _y_start = None
-    bbox_dct: dict = field(init=False)
 
     def __post_init__(self):
         # render the asset
@@ -56,56 +59,72 @@ class SelectionArrow:
 
     @property
     def tags(self):
+        """ get all tags for this object """
         return self.container.canvas.gettags(self.id)
 
+    @property
+    def container_anchor(self):
+        """ get the CURRENT anchor for the container. NB. self.container.anchor gets the INITIAL anchor """
+        return self.container.canvas.itemcget(self.container.id, "anchor")
+
+    @property
+    def container_bbox(self):
+        """ get the CURRENT bbox of the container """
+        l, t, r, b = self.container.canvas.bbox(self.container.id)
+        return dict(l=l, t=t, r=r, b=b)
+
+    @property
+    def container_dimensions(self):
+        """ get the CURRENT dimensions of the container """
+        l, t, r, b = [v for _, v in self.container_bbox.items()]
+        # return the width, height
+        return r - l, b - t
+
     def on_click(self, event):
-        """ on click, collect the events x,y coords """
+        """ on click, collect the events x,y coords and set the anchor to the scale anchor for this arrow """
         debug(f'event: {event}, {self.__class__}')
 
         # collect the event x, y
         self._x_start = event.x
         self._y_start = event.y
 
-        self._update_anchor(self.container.anchor, self.new_anchor)
+        # set the anchor to the right position for scaling using this arrow
+        self._update_anchor(self.anchor)
 
     def on_move(self, event):
         """ on move, resize the image along the direction of the arrow. Also resize the bbox and arrow positions """
-        # TODO: to change W / E drag
-        # change sign +/- in x_mv
-        # anchor in scale from l to r
-
-        # the left, top, right and bottom coord
-        l, t, r, b = self.container.canvas.bbox(self.container.id)
-
-        # the containers current dimensions
-        w = r - l
-        h = b - t
+        # calculate container dimensions
+        w0, h0 = self.container_dimensions
 
         # the amount of movement in x and y since last event
         dx = event.x - self._x_start
         dy = event.y - self._y_start
 
-        # the new dimensions of the container
-        if self.new_anchor == 'nw':
-            x_mv = int(w + dx)
+        # determine how to calculate the new w/h of the container based on the anchorage
+        if W in self.anchor:
+            w = int(w0 + dx)
+        elif E in self.anchor:
+            w = int(w0 - dx)
         else:
-            x_mv = int(w - dx)
-        y_mv = int(h) # + dy
+            w = int(w0)
 
-        # print(f'{self._x_start=}')
-        # print(f'{event.x=}')
-        # print(f'{dx=}')
-        # print(f'{x_mv=}')
+        if S in self.anchor:
+            h = int(h0) - dy
+        elif N in self.anchor:
+            h = int(h0) + dy
+        else:
+            h = int(h0)
 
         # resize the image and update the canvas
-        self.container.image_tk = PhotoImage(self.container.image.resize((x_mv, y_mv)))
+        self.container.image_tk = PhotoImage(self.container.image.resize((w, h)))
         self.container.canvas.itemconfig(self.container.id, image=self.container.image_tk)
 
-        z = self.bbox_dct.get(direction.get(self.new_anchor)[0])
+        # find the x, y anchorage
+        x, y = self._get_coords_for_cardinal_direction(self.anchor)
 
         # scale the arrows and bbox
         for a in self.container.canvas.find_withtag('to_delete'):
-            self.container.canvas.scale(a, z, b - h // 2, x_mv / w, h / h)
+            self.container.canvas.scale(a, x, y, w / w0, h / h0)
 
         # update the event x, y
         self._x_start = event.x
@@ -113,22 +132,54 @@ class SelectionArrow:
 
     def on_release(self, event):
         """ set anchor back to original """
-        self._update_anchor(self.new_anchor, self.container.anchor)
+        debug(f'event: {event}, {self.__class__}')
+        self._update_anchor(self.container.anchor)
 
-    def _update_anchor(self, anchor, new_anchor):
-        # reset anchor
+    def _update_anchor(self, scale_anchor):
+        """ update anchor
         #   1. get coords of container bbox
-        #   2. store these in a dict
-        #   3. lookup the coord values corresponding to the anchor
-        #   4. move the container to the new coords
-        #   5. update the anchor point (this will cause it to move back to the original bboz)
-        print(anchor)
-        print(new_anchor)
+        #   2. lookup the coord values corresponding to the anchor
+        #   3. move the container to the new coords
+        #   4. update the anchor point (this will cause it to move back to the original bbox)
+        """
+        debug('updating anchor')
+        debug(f'current anchor: {self.container_anchor} '
+              f'at coords: {self.container.canvas.bbox(self.container.id)} '
+              f'target anchor: {scale_anchor}')
 
-        if anchor != new_anchor:
-            l, t, r, b = self.container.canvas.bbox(self.container.id)
-            self.bbox_dct = dict(l=l, t=t, r=r, b=b)
-            args = [self.bbox_dct.get(a) for a in direction.get(new_anchor)]
+        # if the target anchorage is already the current anchorage, skip updating
+        if scale_anchor != self.container_anchor:
+            # get the proper anchorage coords for the target anchor
+            coords = self._get_coords_for_cardinal_direction(scale_anchor)
+            print(coords)
 
-            self.container.canvas.moveto(self.container.id, *args)
-            self.container.canvas.itemconfig(self.container.id, anchor=new_anchor)
+            # update the container to the new coords
+            self.container.canvas.coords(self.container.id, *coords)
+            # configure the container to the target anchor
+            self.container.canvas.itemconfig(self.container.id, anchor=scale_anchor)
+
+            debug(f'new anchor: {self.container.canvas.itemcget(self.container.id, "anchor")} '
+                  f'at coords: {self.container.canvas.bbox(self.container.id)}')
+
+        debug('container anchor is already scale anchor, skipping')
+
+    def _get_coords_for_cardinal_direction(self, anchor):
+        """ given the cardinal direction, return the coords of the current containers bbox
+        offset by half the width / length depending on the cardinal direction """
+        # get the coords for the anchor
+        x, y = [self.container_bbox.get(a) for a in direction.get(anchor)]
+
+        # determine the current width and height
+        w, h = self.container_dimensions
+
+        # offset if needed
+        if anchor == S:
+            x += w / 2
+        if anchor == W:
+            y -= h / 2
+        if anchor == N:
+            x -= w / 2
+        if anchor == E:
+            y += h / 2
+
+        return x, y

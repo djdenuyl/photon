@@ -40,17 +40,15 @@ class Scalable:
         length = bottom - top
         width = right - left
 
-        # directions = [S, SE, E, NE, N, NW, W, SW]
-        # xs = [left + width / 2, left, left, left, right - width / 2, right, right, right]
-        # ys = [top, top, top + length / 2, bottom, bottom, bottom, bottom - length / 2, top]
-        #
-        # arrows = []
-        # rotation = 0
-        # for d, x, y in zip(directions, xs, ys):
-        #     arrows.append(
-        #         SelectionArrow(self.container, x, y, d, rotation, )
-        #     )
-        #
-        #     rotation += 45
-        SelectionArrow(self.container, right, top + length / 2, W, NW, 270)
-        SelectionArrow(self.container, left, top + length / 2, E, NE, 90)
+        xs = [left + width / 2, left, left, left, right - width / 2, right, right, right]
+        ys = [top, top, top + length / 2, bottom, bottom, bottom, bottom - length / 2, top]
+        directions = [S, SE, E, NE, N, NW, W, SW]
+
+        arrows = []
+        rotation = 0
+        for d, x, y in zip(directions, xs, ys):
+            arrows.append(
+                SelectionArrow(self.container, x, y, d, rotation)
+            )
+
+            rotation += 45
