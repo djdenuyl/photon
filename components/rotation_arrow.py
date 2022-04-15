@@ -1,6 +1,6 @@
 """
-Selection arrows are the arrows that are rendered when a widget is selected. When dragged they resize the
-widget in the arrow direction.
+Rotation arrows are the arrows that are rendered when a widgets rotation is selected. When dragged they rotate the
+widget in the arrow direction from the .
 
 author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-04-11
