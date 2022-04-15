@@ -38,8 +38,8 @@ class SelectionArrow:
     image: Image = field(init=False)
     image_tk: PhotoImage = field(init=False)
     _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
-    _x_start = None
-    _y_start = None
+    _event_x: float = field(init=False)
+    _event_y: float = field(init=False)
 
     def __post_init__(self):
         # render the asset
@@ -85,8 +85,8 @@ class SelectionArrow:
         debug(f'event: {event}, {self.__class__}')
 
         # collect the event x, y
-        self._x_start = event.x
-        self._y_start = event.y
+        self._event_x = event.x
+        self._event_y = event.y
 
         # set the anchor to the right position for scaling using this arrow
         self._update_anchor(self.anchor)
@@ -97,8 +97,8 @@ class SelectionArrow:
         w0, h0 = self.container_dimensions
 
         # the amount of movement in x and y since last event
-        dx = event.x - self._x_start
-        dy = event.y - self._y_start
+        dx = event.x - self._event_x
+        dy = event.y - self._event_y
 
         # determine how to calculate the new w/h of the container based on the anchorage
         if W in self.anchor:
@@ -115,6 +115,12 @@ class SelectionArrow:
         else:
             h = int(h0)
 
+        # h and w must be > 0
+        if h < 1:
+            h = 1
+        if w < 1:
+            w = 1
+
         # resize the image and update the canvas
         self.container.image_tk = PhotoImage(self.container.image.resize((w, h)))
         self.container.canvas.itemconfig(self.container.id, image=self.container.image_tk)
@@ -127,8 +133,8 @@ class SelectionArrow:
             self.container.canvas.scale(a, x, y, w / w0, h / h0)
 
         # update the event x, y
-        self._x_start = event.x
-        self._y_start = event.y
+        self._event_x = event.x
+        self._event_y = event.y
 
     def on_release(self, event):
         """ set anchor back to original """
