@@ -47,4 +47,4 @@ class Container:
         self.scalable = Scalable(self)
 
         # make container rotatable
-        # self.rotatable = Rotatable(self)
+        self.rotatable = Rotatable(self)

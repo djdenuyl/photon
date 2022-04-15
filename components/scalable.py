@@ -7,14 +7,11 @@ date: 2022-04-10
 """
 from components.mutable import Mutable
 from components.scale_arrow import ScaleArrow
-from pathlib import Path
 from tkinter import SE, SW, NE, NW, S, W, N, E
 
 
 class Scalable(Mutable):
     """ A Scalable implements methods to scale a container. """
-    _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
-
     def __init__(self, container):
         super().__init__(container)
         self._add_binding("<ButtonPress-1>", self.on_press)
@@ -24,7 +21,8 @@ class Scalable(Mutable):
         """ on click, execute select function if the widget does not have the 'selected' tag.
         no nothing if it is already selected """
         # if widget not selected, select it
-        if 'selected' in self.tags:
+        if 'selected' in self.tags \
+                and 'selection_event' in self.tags:
             self._draw_arrows()
             self._add_tag('scale_arrows_active')
             self._add_tag('scale_arrows_selection_event')

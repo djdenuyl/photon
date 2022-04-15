@@ -4,36 +4,63 @@ A rotatable container allows rotation of the image it contains
 author: David den Uyl (ddenuyl@gmail.com)
 date: 2022-04-15
 """
-from logging import debug
+from tkinter import S, SE, E, NE, N, NW, W, SW
+from components.mutable import Mutable
+from pathlib import Path
+
+from components.rotation_arrow import RotationArrow
 
 
-class Rotatable:
+class Rotatable(Mutable):
+    _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
+
     def __init__(self, container):
-        self.container = container
-        self.canvas = self.container.canvas
+        super().__init__(container)
 
         # add bindings
-        self.canvas.tag_bind(self.container.id, '<ButtonPress-1>', self.on_click, add='+')
+        self._add_binding('<ButtonPress-1>', self.on_press)
+        self._add_binding('<ButtonRelease-1>', self.on_release)
 
-    @property
-    def tags(self):
-        return self.canvas.gettags(self.container.id)
-
-    def on_click(self, event):
+    def on_press(self, event):
         """ on click create the rotation arrows, if the container is currently displaying resize arrows"""
-        debug(f'event: {event}')
 
         if 'scale_arrows_active' in self.tags \
                 and 'scale_arrows_selection_event' not in self.tags:
             # delete old arrows
-            [self.canvas.delete(a) for a in self.canvas.find_withtag('scale_arrow')]
+            [self._delete(a) for a in self._tagged('scale_arrow')]
+            self._remove_tag('scale_arrows_active')
+            self._add_tag('rotation_arrows_active')
+            self._add_tag('rotation_arrows_selection_event')
 
             # draw new arrows
             self._draw_arrows()
 
-            # add new arrow tag
-            self.canvas.addtag_withtag('rotation_arrows_active', self.container.id)
+        # debug statement
+        self._debug(event)
 
-    @staticmethod
+    def on_release(self, event):
+        self._remove_tag('rotation_arrows_selection_event')
+
+        # debug statement
+        self._debug(event)
+        print('end button click')
+
     def _draw_arrows(self):
-        print('drawing arrows')
+        """ draws the rotation arrows around the bounding box. """
+        # collect the window coords
+        left, top, right, bottom = self.bbox
+        length = bottom - top
+        width = right - left
+
+        xs = [left + width / 2, left, left, left, right - width / 2, right, right, right]
+        ys = [top, top, top + length / 2, bottom, bottom, bottom, bottom - length / 2, top]
+        directions = [S, SE, E, NE, N, NW, W, SW]
+
+        arrows = []
+        rotation = 0
+        for d, x, y in zip(directions, xs, ys):
+            arrows.append(
+                RotationArrow(self.container, x, y, d, rotation)
+            )
+
+            rotation += 45
