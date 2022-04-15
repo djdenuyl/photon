@@ -35,6 +35,11 @@ class Mutable:
         l, t, r, b = self.bbox
         return r - l, b - t
 
+    @property
+    def container_anchor(self):
+        """ get the CURRENT anchor for the container. NB. self.container.anchor gets the INITIAL anchor """
+        return self.container.canvas.itemcget(self.container.id, "anchor")
+
     def _add_binding(self, button, function, _id=None):
         """ add a binding to the container """
         self.canvas.tag_bind(_id or self.container.id, button, function, add='+')

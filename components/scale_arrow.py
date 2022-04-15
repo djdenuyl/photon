@@ -27,7 +27,7 @@ direction = {
 
 class ScaleArrow(Mutable):
     _size: Tuple[int, int] = (25, 25)
-    _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
+    _arrow_asset_path: Path = Path('assets', 'images', 'sizing_arrow.png')
 
     def __init__(self, container, x, y, anchor, rotation, size=None):
         super().__init__(container)
@@ -50,18 +50,12 @@ class ScaleArrow(Mutable):
         self._add_tag('to_delete', self.id)
 
         # add bindings
-        self._add_binding('<ButtonPress-1>', self.on_click, self.id)
+        self._add_binding('<ButtonPress-1>', self.on_press, self.id)
         self._add_binding('<B1-Motion>', self.on_move, self.id)
         self._add_binding('<ButtonRelease-1>', self.on_release)
 
-    @property
-    def container_anchor(self):
-        """ get the CURRENT anchor for the container. NB. self.container.anchor gets the INITIAL anchor """
-        return self.container.canvas.itemcget(self.container.id, "anchor")
-
-    def on_click(self, event):
+    def on_press(self, event):
         """ on click, collect the events x,y coords and set the anchor to the scale anchor for this arrow """
-        debug(f'event: {event}, {self.__class__}')
 
         # collect the event x, y
         self._event_x = event.x
@@ -69,6 +63,8 @@ class ScaleArrow(Mutable):
 
         # set the anchor to the right position for scaling using this arrow
         self._update_anchor(self.anchor)
+
+        self._debug(event)
 
     def on_move(self, event):
         """ on move, resize the image along the direction of the arrow. Also resize the bbox and arrow positions """
@@ -117,8 +113,9 @@ class ScaleArrow(Mutable):
 
     def on_release(self, event):
         """ set anchor back to original """
-        debug(f'event: {event}, {self.__class__}')
         self._update_anchor(self.container.anchor)
+
+        self._debug(event)
 
     def _update_anchor(self, scale_anchor):
         """ update anchor
