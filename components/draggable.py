@@ -11,16 +11,21 @@ class Draggable:
     """ A Draggable implements functionality to drag a container across the canvas"""
     def __init__(self, container):
         self.container = container
+        self.canvas = self.container.canvas
 
         self.x_start = None
         self.y_start = None
 
-        self.container.canvas.tag_bind(self.container.id, "<ButtonPress-1>", self.on_press, add='+')
-        self.container.canvas.tag_bind(self.container.id, "<B1-Motion>", self.on_drag, add='+')
+        self.canvas.tag_bind(self.container.id, "<ButtonPress-1>", self.on_press, add='+')
+        self.canvas.tag_bind(self.container.id, "<B1-Motion>", self.on_drag, add='+')
+
+    @property
+    def tags(self):
+        return self.canvas.gettags(self.container.id)
 
     def on_press(self, event):
         """ on click, set the original widget location """
-        debug(f'event: {event}, {self.__class__}')
+        self._debug(event)
 
         # collect the x,y event
         self.x_start = event.x
@@ -38,4 +43,10 @@ class Draggable:
         self.y_start = event.y
 
         # move all selected
-        [self.container.canvas.move(i, dx, dy) for i in self.container.canvas.find_withtag('selected')]
+        [self.canvas.move(i, dx, dy) for i in self.canvas.find_withtag('selected')]
+
+    def _debug(self, event):
+        debug(f'event: {event}, '
+              f'obj: {self.__class__.__name__}, '
+              f'id: {self.container.id}, '
+              f'tags: {self.tags}')

@@ -27,7 +27,7 @@ direction = {
 
 
 @dataclass
-class SelectionArrow:
+class ScaleArrow:
     container: None
     x: int
     y: int
@@ -38,8 +38,8 @@ class SelectionArrow:
     image: Image = field(init=False)
     image_tk: PhotoImage = field(init=False)
     _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
-    _event_x: float = field(init=False)
-    _event_y: float = field(init=False)
+    _event_x: int = field(init=False)
+    _event_y: int = field(init=False)
 
     def __post_init__(self):
         # render the asset
@@ -48,7 +48,7 @@ class SelectionArrow:
         self.id = self.container.canvas.create_image(self.x, self.y, image=self.image_tk, anchor=self.anchor)
 
         # add tags
-        self.container.canvas.addtag_withtag('arrow', self.id)
+        self.container.canvas.addtag_withtag('scale_arrow', self.id)
         self.container.canvas.addtag_withtag('selected', self.id)
         self.container.canvas.addtag_withtag('to_delete', self.id)
 
@@ -157,7 +157,6 @@ class SelectionArrow:
         if scale_anchor != self.container_anchor:
             # get the proper anchorage coords for the target anchor
             coords = self._get_coords_for_cardinal_direction(scale_anchor)
-            print(coords)
 
             # update the container to the new coords
             self.container.canvas.coords(self.container.id, *coords)
