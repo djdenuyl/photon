@@ -19,6 +19,7 @@ class MainCanvas(Canvas):
         # bindings
         self.bind('<Button-1>', self.deselect_all)
 
+        # activate the reset button
         Reset(self).open()
 
     def deselect_all(self, e):

@@ -1,42 +1,47 @@
 """
-Make object scalable
+A Scalable container can be resized by selecting its resize arrows.
+The Scalable object is responsible for creating the resize arrows
 
 author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-04-10
 """
-from components.selection_arrow import SelectionArrow
-from logging import debug
-from pathlib import Path
+from components.mutable import Mutable
+from components.scale_arrow import ScaleArrow
 from tkinter import SE, SW, NE, NW, S, W, N, E
 
 
-class Scalable:
+class Scalable(Mutable):
     """ A Scalable implements methods to scale a container. """
-    _arrow_asset_path = Path('assets', 'images', 'sizing_arrow.png')
-
     def __init__(self, container):
-        self.container = container
-        self.canvas = self.container.canvas
+        super().__init__(container)
+        self._add_binding("<ButtonPress-1>", self.on_press)
+        self._add_binding("<ButtonRelease-1>", self.on_release)
 
-        self.canvas.tag_bind(self.container.id, "<ButtonPress-1>", self.on_click, add='+')
-
-    def on_click(self, event):
+    def on_press(self, event):
         """ on click, execute select function if the widget does not have the 'selected' tag.
         no nothing if it is already selected """
         # if widget not selected, select it
-        if 'selected' in self.canvas.gettags(self.container.id):
+        if 'selected' in self.tags \
+                and 'selection_event' in self.tags:
             self._draw_arrows()
+            self._add_tag('scale_arrows_active')
+            self._add_tag('scale_arrows_selection_event')
 
         # debug statement
-        debug(f'event: {event}, '
-              f'func: select, '
-              f'id: {self.container.id}, '
-              f'tags: {self.canvas.gettags(self.container.id)}')
+        self._debug(event)
+
+    def on_release(self, event):
+        """ on release, remove resize arrow selection event tag"""
+        if 'scale_arrows_selection_event' in self.tags:
+            self._remove_tag('scale_arrows_selection_event')
+
+        # debug statement
+        self._debug(event)
 
     def _draw_arrows(self):
         """ draws the resizing arrows around the bounding box. """
         # collect the window coords
-        left, top, right, bottom = self.canvas.bbox(self.container.id)
+        left, top, right, bottom = self.bbox
         length = bottom - top
         width = right - left
 
@@ -48,7 +53,7 @@ class Scalable:
         rotation = 0
         for d, x, y in zip(directions, xs, ys):
             arrows.append(
-                SelectionArrow(self.container, x, y, d, rotation)
+                ScaleArrow(self.container, x, y, d, rotation)
             )
 
             rotation += 45

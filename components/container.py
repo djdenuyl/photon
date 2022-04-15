@@ -10,6 +10,7 @@ from PIL import Image
 from PIL.ImageTk import PhotoImage
 from tkinter import NW
 from components.draggable import Draggable
+from components.rotatable import Rotatable
 from components.selectable import Selectable
 from components.scalable import Scalable
 
@@ -44,3 +45,6 @@ class Container:
 
         # make container scalable
         self.scalable = Scalable(self)
+
+        # make container rotatable
+        self.rotatable = Rotatable(self)
