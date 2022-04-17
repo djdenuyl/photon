@@ -24,6 +24,7 @@ class Container:
         self.canvas = canvas
         self.image_path = image_path
         self.image = Image.open(self.image_path)
+        self.image_rotation = 0
         self.image_tk = PhotoImage(self.image, Image.ANTIALIAS)
         self.anchor = anchor or NW
 

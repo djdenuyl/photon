@@ -5,24 +5,12 @@ widget in the arrow direction from the .
 author: David den Uyl (djdenuyl@gmail.nl)
 date: 2022-04-15
 """
-from logging import debug
+from math import tan, degrees
 from pathlib import Path
-from tkinter import S, W, N, E
 from typing import Tuple, Optional
 from PIL import Image
 from PIL.ImageTk import PhotoImage
 from components.mutable import Mutable
-
-direction = {
-    'n': ('r', 't'),
-    'ne': ('r', 't'),
-    'e': ('r', 't'),
-    'se': ('r', 'b'),
-    's': ('l', 'b'),
-    'sw': ('l', 'b'),
-    'w': ('l', 'b'),
-    'nw': ('l', 't')
-}
 
 
 class RotationArrow(Mutable):
@@ -54,22 +42,42 @@ class RotationArrow(Mutable):
         self._add_binding('<B1-Motion>', self.on_move, self.id)
         self._add_binding('<ButtonRelease-1>', self.on_release)
 
-        self.image_rotation = 0
-
     def on_press(self, event):
-        """ on click, collect the events x,y coords and set the anchor to the scale anchor for this arrow """
-        self.image_rotation += 45
-
-        self.container.image_tk = PhotoImage(self.container.image.resize(self.container.size).rotate(self.image_rotation))
-        self.container.canvas.itemconfig(self.container.id, image=self.container.image_tk)
+        """ on click, collect the events x,y coords """
+        self._event_x = event.x
+        self._event_y = event.y
 
         self._debug(event)
 
     def on_move(self, event):
         """ on move, resize the image along the direction of the arrow. Also resize the bbox and arrow positions """
-        # resize the image and update the canvas
-        # self.container.image_tk = PhotoImage(self.container.image.rotate(45))
-        # self.container.canvas.itemconfig(self.container.id, image=self.container.image_tk)
+        # self.container.image_rotation += 45
+        cx, cy = self.centroid
+        print(f'{self.centroid=}')
+
+        # length old vector
+        r0 = int(degrees(tan((self._event_y - cy) / (self._event_x - cx))))
+        r = int(degrees(tan((event.y - cy) / (event.x - cx))))
+
+        print(f'{r0=}')
+        print(f'{r=}')
+
+        # vnew = sqrt((self._event_x - cx) ** 2 + (self._event_y - cy) ** 2)
+        rotation = r0 - r
+        print(f'{rotation=}')
+
+        self.container.image_rotation += r0 - r
+
+        print(f'{self.container.image_rotation=}')
+
+
+        self.container.image_tk = PhotoImage(
+            self.container.image.resize(self.dimensions).rotate(self.container.image_rotation)
+        )
+        self.container.canvas.itemconfig(self.container.id, image=self.container.image_tk)
+
+        self._event_x = event.x
+        self._event_y = event.y
 
     def on_release(self, event):
         """ set anchor back to original """

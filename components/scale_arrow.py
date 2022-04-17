@@ -97,7 +97,7 @@ class ScaleArrow(Mutable):
             w = 1
 
         # resize the image and update the canvas
-        self.container.image_tk = PhotoImage(self.container.image.resize((w, h)))
+        self.container.image_tk = PhotoImage(self.container.image.resize((w, h)).rotate(self.container.image_rotation))
         self.container.canvas.itemconfig(self.container.id, image=self.container.image_tk)
 
         # find the x, y anchorage

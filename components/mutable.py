@@ -36,6 +36,12 @@ class Mutable:
         return r - l, b - t
 
     @property
+    def centroid(self):
+        """ gets the coords of the centroid of the container """
+        l, t, r, b = self.bbox
+        return l + (r - l) / 2, t + (b - t) / 2
+
+    @property
     def container_anchor(self):
         """ get the CURRENT anchor for the container. NB. self.container.anchor gets the INITIAL anchor """
         return self.container.canvas.itemcget(self.container.id, "anchor")
