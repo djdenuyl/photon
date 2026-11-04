@@ -2,7 +2,7 @@
 // background), move (several at once, snapping to guides), resize with the corner handles, move a
 // photo inside its frame with the see-through centre handle, and a toolbar that floats next to the
 // selection. Changes are previewed live and committed on release.
-import { useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { updateElement, type ElementEdit, type Edits } from "@/lib/edits";
 import { PAGE, placement, type Box, type Element, type Page } from "@/lib/layout";
 import type { SaveStatus } from "@/lib/saver";
@@ -26,11 +26,12 @@ export interface Item {
 const pageKey = (p: Page) => `${p.event.id}:${p.k}`;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-/** The area a caption's text takes up (an estimate: the text is not measured). */
-function captionBox(c: Extract<Element, { type: "caption" }>): Box {
-  const size = c.size ?? 3.53;
-  const w = Math.max(6, c.text.length * size * (c.font ? 0.78 : 0.56));
-  return { x: c.anchor === "end" ? c.x - w : c.x, y: c.y + 0.75 * size, w, h: 1.4 * size };
+/** Caption edits always carry their frame and `box`, so older (one-line) caption edits are
+ * converted on the first change (see edits.ts). */
+export function withFrame(i: Item, change: ElementEdit | null): ElementEdit | null {
+  if (!change || i.el.type !== "caption") return change;
+  const { x, y, w, h } = i.el;
+  return { x, y, w, h, ...change, box: true };
 }
 
 export function itemsFor(pages: { page: Page | null; dx: number }[]): Item[] {
@@ -39,7 +40,7 @@ export function itemsFor(pages: { page: Page | null; dx: number }[]): Item[] {
       const key = pageKey(page!);
       const slot = el.slot ?? "";
       const kind: Kind = el.type === "photo" ? (el.bg ? "bg" : el.shape ? "shape" : "photo") : el.type;
-      const box = el.type === "caption" ? captionBox(el) : { x: el.x, y: el.y, w: el.w, h: el.h };
+      const box = { x: el.x, y: el.y, w: el.w, h: el.h };
       return { sel: `${key}|${slot}`, key, slot, el, kind, box, dx, page: page! };
     }),
   );
@@ -51,16 +52,6 @@ export function photoOf(i: Item): string | null {
 }
 
 const rotOf = (i: Item) => (i.el.type === "photo" ? (i.el.rot ?? 0) : 0);
-
-/** The edit for a new box (resize). Captions scale their text with the height. */
-function boxEdit(i: Item, b: Box): ElementEdit {
-  const el = i.el;
-  if (el.type === "caption") {
-    const size = (el.size ?? 3.53) * (b.h / i.box.h);
-    return { size, x: el.anchor === "end" ? b.x + b.w : b.x, y: b.y - 0.75 * size };
-  }
-  return { x: b.x, y: b.y, w: b.w, h: b.h };
-}
 
 // Snapping: within 2 mm of a page's margins, centre lines and edges, or of another element's edges,
 // centre, or edge plus the 5 mm gap. Hold Alt to place freely.
@@ -128,6 +119,20 @@ export function EditorOverlay({
   const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [guides, setGuides] = useState<Lines>({ x: [], y: [] });
   const [busy, setBusy] = useState(false);
+  // text frames whose text doesn't fit (measured on the rendered page, like Albelli's red warning)
+  const [overflow, setOverflow] = useState<string[]>([]);
+  useLayoutEffect(() => {
+    const stage = root.current?.parentElement;
+    if (!stage) return;
+    const over = items
+      .filter((i) => i.kind === "caption")
+      .filter((i) => {
+        const el = stage.querySelector<HTMLElement>(`[data-cap="${CSS.escape(i.sel)}"]`);
+        return !!el && (el.scrollHeight > el.clientHeight + 0.5 || el.scrollWidth > el.clientWidth + 0.5);
+      })
+      .map((i) => i.sel);
+    if (over.join() !== overflow.join()) setOverflow(over);
+  }, [items, overflow]);
 
   const toMm = (e: { clientX: number; clientY: number }) => {
     const r = root.current!.getBoundingClientRect();
@@ -200,7 +205,7 @@ export function EditorOverlay({
         take(snap1([x0, x1, (x0 + x1) / 2], lines.current.x), "x");
         take(snap1([y0, y1, (y0 + y1) / 2], lines.current.y), "y");
       }
-      next = d.targets.reduce((acc, t) => updateElement(acc, t.key, t.slot, { x: t.el.x + dx, y: t.el.y + dy }), d.base);
+      next = d.targets.reduce((acc, t) => updateElement(acc, t.key, t.slot, withFrame(t, { x: t.el.x + dx, y: t.el.y + dy })), d.base);
     } else if (d.mode === "pan") {
       const { el } = d.target;
       const id = photoOf(d.target);
@@ -220,14 +225,14 @@ export function EditorOverlay({
         take(snap1([(c.includes("s") ? box.y + box.h : box.y) + dy], lines.current.y), "y");
       }
       let { x, y, w, h } = box;
-      if (c.includes("e")) w = Math.max(8, box.w + dx);
-      if (c.includes("s")) h = Math.max(d.target.kind === "caption" ? 2 : 8, box.h + dy);
-      if (c.includes("w")) w = Math.max(8, box.w - dx);
-      if (c.includes("n")) h = Math.max(d.target.kind === "caption" ? 2 : 8, box.h - dy);
-      if (d.target.kind === "caption") w = box.w * (h / box.h); // text keeps its proportions
+      const min = d.target.kind === "caption" ? 3 : 8;
+      if (c.includes("e")) w = Math.max(min, box.w + dx);
+      if (c.includes("s")) h = Math.max(min, box.h + dy);
+      if (c.includes("w")) w = Math.max(min, box.w - dx);
+      if (c.includes("n")) h = Math.max(min, box.h - dy);
       if (c.includes("w")) x = box.x + box.w - w;
       if (c.includes("n")) y = box.y + box.h - h;
-      next = updateElement(d.base, d.target.key, d.target.slot, boxEdit(d.target, { x, y, w, h }));
+      next = updateElement(d.base, d.target.key, d.target.slot, withFrame(d.target, { x, y, w, h }));
     } else {
       setBand({ x0: d.x, y0: d.y, x1: p.x, y1: p.y });
     }
@@ -303,13 +308,14 @@ export function EditorOverlay({
       {items.map((i) => {
         const on = selection.has(i.sel);
         const bg = i.kind === "bg";
+        const tooMuch = overflow.includes(i.sel);
         if (bg && !on) return null;
         const rot = rotOf(i);
         return (
           <div
             key={i.sel}
             data-sel={i.sel}
-            className={`absolute ${bg ? "pointer-events-none" : "cursor-move"} ${on ? "outline-2 outline-accent" : `outline-1 hover:outline-white/80 ${i.kind === "caption" ? "outline-dashed outline-white/40" : "outline-white/0"}`}`}
+            className={`absolute ${bg ? "pointer-events-none" : "cursor-move"} ${tooMuch ? "outline-2 outline-dashed outline-[#e5322d]" : on ? "outline-2 outline-accent" : `outline-1 hover:outline-white/80 ${i.kind === "caption" ? "outline-dashed outline-white/40" : "outline-white/0"}`}`}
             style={{
               left: pct(i.dx + i.box.x, width),
               top: pct(i.box.y, PAGE.h),
@@ -319,6 +325,14 @@ export function EditorOverlay({
               boxShadow: on ? "0 0 0 1px rgb(255 255 255 / 0.8)" : undefined,
             }}
           >
+            {tooMuch && (
+              <span
+                title="De tekst past niet in het kader: maak het kader groter of de tekst korter"
+                className="absolute -top-2.5 -right-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#e5322d] text-xs font-bold text-white shadow"
+              >
+                !
+              </span>
+            )}
             {on && single && !bg &&
               ["nw", "ne", "sw", "se"].map((c) => (
                 <span
@@ -397,6 +411,9 @@ const ICONS: Record<string, ReactNode> = {
   addText: <path d="M3 6V4h12v2M7 16h4M9 4v12M17 14v6M14 17h6" />,
   smaller: <path d="M3 18 8 6l5 12M4.7 14h6.6M16 12h6" />,
   bigger: <path d="M3 18 8 6l5 12M4.7 14h6.6M16 12h6M19 9v6" />,
+  alignleft: <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />,
+  aligncenter: <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />,
+  alignright: <path d="M4 6h16M10 10h10M4 14h16M10 18h10" />,
   color: <><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" /></>,
   resetPage: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M9 14a3 3 0 1 0 1-2.2L9 13M9 10v3h3" /></>,
 };
@@ -423,6 +440,21 @@ export function IconBtn({ icon, label, onClick, active, disabled }: { icon: keyo
 }
 
 const Sep = () => <span className="mx-0.5 h-6 w-px shrink-0 bg-hair" />;
+
+/** Caption text: wraps like the frame does; commits when it loses focus or on ctrl+Enter. */
+function TextArea({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const commit = () => draft !== value && onCommit(draft);
+  return (
+    <textarea value={draft} aria-label="Tekst" placeholder="Tekst" rows={Math.min(4, Math.max(1, draft.split("\n").length))}
+      onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) commit();
+        if (e.key === "Escape") setDraft(value);
+      }}
+      className="min-h-9 w-56 min-w-0 resize-y rounded-lg border border-hair bg-page px-2 py-1.5 text-sm leading-snug" />
+  );
+}
 
 /** A text field that commits on Enter or when it loses focus (one undo step per change). */
 function TextField({ value, onCommit, label }: { value: string; onCommit: (v: string) => void; label: string }) {
@@ -474,10 +506,12 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
       {one && photoOf(one) && <span className="px-1.5 font-mono text-xs text-muted select-all" title="Fotonummer">{photoOf(one)}</span>}
       {caption && (
         <>
-          <TextField key={one!.sel + caption.text} value={caption.text} label="Tekst" onCommit={(text) => a.apply(() => ({ text }))} />
+          <TextArea key={one!.sel + caption.text} value={caption.text} onCommit={(text) => a.apply(() => ({ text }))} />
           <IconBtn icon="smaller" label="Kleinere tekst" onClick={() => a.apply(() => ({ size: Math.max(2, (caption.size ?? 3.53) / 1.15) }))} />
           <IconBtn icon="bigger" label="Grotere tekst" onClick={() => a.apply(() => ({ size: Math.min(40, (caption.size ?? 3.53) * 1.15) }))} />
           <IconBtn icon="color" label={caption.color === "#000" ? "Witte tekst" : "Zwarte tekst"} onClick={() => a.apply(() => ({ color: caption.color === "#000" ? "#fff" : "#000" }))} />
+          <IconBtn icon={`align${caption.align ?? "left"}`} label={{ left: "Links uitgelijnd", center: "Gecentreerd", right: "Rechts uitgelijnd" }[caption.align ?? "left"]}
+            onClick={() => a.apply(() => ({ align: ({ left: "center", center: "right", right: "left" } as const)[caption.align ?? "left"] }))} />
           <Sep />
         </>
       )}

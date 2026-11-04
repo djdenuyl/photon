@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BookViewer, type Slide } from "@/components/BookViewer";
-import { EditBar, EditorOverlay, itemsFor, photoOf, SelectionBar, type Item } from "@/components/Editor";
+import { EditBar, EditorOverlay, itemsFor, photoOf, SelectionBar, withFrame, type Item } from "@/components/Editor";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { PhotoSheet } from "@/components/PhotoSheet";
 import { useIsDesktop } from "@/components/Shell";
@@ -163,7 +163,7 @@ export function BookPage() {
   const selected = items.filter((i) => selection.has(i.sel));
   const one = selected.length === 1 ? selected[0] : null;
   const apply = (f: (i: Item) => ElementEdit | null) =>
-    commit(selected.reduce((acc, i) => updateElement(acc, i.key, i.slot, f(i)), edits));
+    commit(selected.reduce((acc, i) => updateElement(acc, i.key, i.slot, withFrame(i, f(i))), edits));
 
   // stacking: in front of everything on the page, or behind everything but the background
   const zs = (i: Item) => i.page.elements.map((e) => ({ z: e.z ?? 0, bg: e.type === "photo" && !!e.bg, slot: e.slot }));
@@ -189,7 +189,7 @@ export function BookPage() {
     if (!target?.page) return;
     const key = `${target.page.event.id}:${target.page.k}`;
     const slot = `add${Date.now().toString(36)}`;
-    commit(updateElement(edits, key, slot, { add: "caption", text: "Tekst", x: PAGE.w / 2 - 10, y: PAGE.h / 2 }));
+    commit(updateElement(edits, key, slot, { add: "caption", box: true, text: "Tekst", x: PAGE.w / 2 - 30, y: PAGE.h / 2 - 8, w: 60, h: 16, size: 5 }));
     setSelection(new Set([`${key}|${slot}`]));
   };
 
@@ -264,8 +264,9 @@ export function BookPage() {
   );
 
   return (
-    <div className="mx-auto max-w-[1280px] px-3 pt-3 md:px-6 md:pt-5">
+    <div className={`mx-auto px-3 pt-3 md:px-6 md:pt-5 ${editing ? "max-w-[1280px]" : ""}`}>
       <BookViewer
+        presentation={!editing}
         slides={slides}
         index={slide}
         onIndex={go}

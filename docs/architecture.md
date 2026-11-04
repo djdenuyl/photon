@@ -90,6 +90,13 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   at a time, retried on failure and flushed with keepalive when the page closes. Only the pages
   that differ from the last known server copy are sent (PATCH), and the server's merged map comes
   back into the cache, so two tabs only overwrite each other on the same page.
+- Text frames: a caption is a box (x/y/w/h); its text wraps within the width and is cut off at
+  the bottom (rendered as a foreignObject). Corner handles resize the frame, not the text; A−/A+
+  change the size. The editor measures every frame on the rendered page and marks one whose text
+  doesn't fit with a red dashed outline and "!" (as Albelli does). Caption edits from before text
+  frames (no `box`) are converted on load and on their first change.
+- "Bekijken" shows the book as large as the window allows (no filmstrip) with a full-screen
+  button: the Fullscreen API, or the whole window where there is none (iPhone Safari).
 - Not editable yet: rotating month titles and captions, moving elements between pages.
 
 ## Years (`/boek/:year`)

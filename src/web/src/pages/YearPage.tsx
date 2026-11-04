@@ -64,6 +64,7 @@ function AlbelliYear({ year }: { year: number }) {
   return (
     <div className="mx-auto max-w-[1280px] px-3 pt-3 md:px-6 md:pt-5">
       <BookViewer
+        presentation
         slides={slides}
         index={slide}
         onIndex={go}

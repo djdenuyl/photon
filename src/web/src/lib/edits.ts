@@ -5,7 +5,7 @@
 // fixed name for cover parts ("letter3", "shard0", "background", "label"), "month" for the month
 // title and "cap0", "cap1"… for captions. So edits survive a re-layout as long as the event keeps
 // its pages. Stored per page as JSON strings in the `edits` state map.
-import type { Book, Border, Box, Element, Page } from "./layout";
+import { CAPTION_SIZE, captionFrame, type Book, type Border, type Box, type CaptionElement, type Element, type Page } from "./layout";
 import type { StringMap } from "./types";
 
 export interface ElementEdit {
@@ -25,8 +25,12 @@ export interface ElementEdit {
   text?: string;
   size?: number;
   color?: string;
+  align?: "left" | "center" | "right";
   /** A caption added in the editor (not from the layout). */
   add?: "caption";
+  /** Caption geometry is a text frame (x/y/w/h). Caption edits from before text frames lack it:
+   * their x/y were the text's left (right for the cover label) and baseline − 1.7 × size. */
+  box?: true;
 }
 
 export type PageEdits = Record<string, ElementEdit>;
@@ -83,20 +87,34 @@ function applyPage(page: Page, pe: PageEdits | undefined): void {
       if (ed?.focus) o.focus = ed.focus;
       out.push(o);
     } else {
-      const o = { ...e, slot, z };
-      if (ed?.text !== undefined) o.text = ed.text;
-      if (ed?.x !== undefined) o.x = ed.x;
-      if (ed?.y !== undefined) o.y = ed.y;
-      if (ed?.size !== undefined) o.size = ed.size;
-      if (ed?.color !== undefined) o.color = ed.color;
-      out.push(o);
+      out.push(captionWith({ ...e, slot, z }, ed));
     }
   });
   for (const [slot, ed] of Object.entries(pe ?? {})) {
     if (ed.add !== "caption" || ed.hidden) continue;
-    out.push({ type: "caption", slot, z: ed.z ?? 1000, text: ed.text ?? "Tekst", x: ed.x ?? 20, y: ed.y ?? 20, size: ed.size, color: ed.color });
+    const text = ed.text ?? "Tekst";
+    const base: CaptionElement = { type: "caption", slot, z: ed.z ?? 1000, text, ...captionFrame(text, 20, 20 + 1.7 * CAPTION_SIZE) };
+    out.push(captionWith(base, ed));
   }
   page.elements = out.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+}
+
+function captionWith(o: CaptionElement, ed: ElementEdit | undefined): CaptionElement {
+  if (!ed) return o;
+  if (ed.text !== undefined) o.text = ed.text;
+  if (ed.size !== undefined) o.size = ed.size;
+  if (ed.color !== undefined) o.color = ed.color;
+  if (ed.align !== undefined) o.align = ed.align;
+  if (ed.box) {
+    for (const k of ["x", "y", "w", "h"] as const) if (ed[k] !== undefined) o[k] = ed[k];
+  } else if (ed.x !== undefined || ed.y !== undefined || ed.size !== undefined || ed.text !== undefined) {
+    // an edit from before text frames: the frame follows the (one-line) text
+    const size = o.size ?? CAPTION_SIZE, end = o.align === "right";
+    const x = ed.x ?? (end ? o.x + o.w : o.x);
+    const baseline = ed.y !== undefined ? ed.y + 1.7 * size : o.y + 0.95 * size;
+    Object.assign(o, captionFrame(o.text, x, baseline, size, o.font, end));
+  }
+  return o;
 }
 
 /** The layout with the edits applied (mutates and returns the books). */
@@ -122,7 +140,7 @@ export function updateElement(edits: Edits, key: string, slot: string, change: E
   const prev = page[slot];
   // resetting an added caption keeps it (with its text and place); only its other changes go
   if (change === null) {
-    if (prev?.add) page[slot] = { add: prev.add, text: prev.text, x: prev.x, y: prev.y };
+    if (prev?.add) page[slot] = { add: prev.add, text: prev.text, x: prev.x, y: prev.y, w: prev.w, h: prev.h, box: prev.box };
     else delete page[slot];
   } else page[slot] = { ...(prev ?? {}), ...change };
   return { ...edits, [key]: page };

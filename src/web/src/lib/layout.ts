@@ -51,16 +51,25 @@ export interface MonthElement extends Box, Editable {
   zoom?: number;
   focus?: [number, number];
 }
-export interface CaptionElement extends Editable {
+/** A text frame: the text wraps within its width; what doesn't fit is cut off (the editor warns). */
+export interface CaptionElement extends Box, Editable {
   type: "caption";
   text: string;
-  /** Top-left (or top-right with anchor "end"); the baseline is 1.7 × size lower. */
-  x: number;
-  y: number;
   size?: number;
   color?: string;
   font?: "donuts";
-  anchor?: "end";
+  align?: "left" | "center" | "right";
+}
+
+export const CAPTION_SIZE = 3.53;
+const LINE = 1.25;
+
+/** A one-line text frame sized to its text (an estimate: the text is not measured), placed by
+ * its first baseline. The legacy captions had x/y as left (or right, "end") and baseline − 1.7 × size. */
+export function captionFrame(text: string, x: number, baseline: number, size = CAPTION_SIZE, font?: "donuts", end = false): Box {
+  const w = Math.max(6, text.length * size * (font ? 0.8 : 0.6) + size);
+  const h = size * LINE + size * 0.2;
+  return { x: end ? x - w : x, y: baseline - size * 0.95, w, h };
 }
 export type Element = PhotoElement | MonthElement | CaptionElement;
 
@@ -349,7 +358,7 @@ export function buildBooks(plan: Plan, photos: Photos, picks: StringMap = {}): B
           const first = photosOnPage.find((e) => !e.bg && !e.big) ?? photosOnPage[0];
           if (first) {
             const x = Math.max(first.x + 4, m + 4), y = Math.min(first.y + first.h - 10, PAGE.h - m - 10);
-            add({ type: "caption", text: event.title, x, y });
+            add({ type: "caption", text: event.title, ...captionFrame(event.title, x, y + 1.7 * CAPTION_SIZE) });
           }
         }
         pages.push(page);
@@ -494,7 +503,7 @@ export function coverPages(cover: Cover, bi: number): { back: Page; front: Page 
   const front: Element[] = [
     { type: "photo", id: cover.background ?? "", slot: "background", x: 0, y: 0, w: PAGE.w, h: PAGE.h, bg: true },
     ...letters,
-    { type: "caption", text: cover.label, slot: "label", x: 196, y: 270 - 1.7 * 7.3, size: 7.3, color: "#000", font: "donuts", anchor: "end" },
+    { type: "caption", text: cover.label, slot: "label", ...captionFrame(cover.label, 196, 270, 7.3, "donuts", true), size: 7.3, color: "#000", font: "donuts", align: "right" },
   ];
   const back = SHARDS.map((pts, i): PhotoElement => {
     const xy = pts.split(" ").map((q) => q.split(",").map(Number));
@@ -542,10 +551,11 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
       const cid = `${id}m${parts.length}`;
       parts.push(`<clipPath id="${cid}">${t}</clipPath><g clip-path="url(#${cid})">${placed(photos.get(e.photo ?? ""), e, url, e.zoom, e.focus)}</g>`);
     } else {
-      const size = e.size ?? 3.53, color = e.color ?? "#fff";
-      const font = e.font === "donuts" ? DONUTS : "Open Sans, sans-serif";
-      const halo = e.font ? "" : ` style="paint-order:stroke" stroke="${color === "#fff" ? "rgba(0,0,0,.35)" : "rgba(255,255,255,.35)"}" stroke-width="${size * 0.11}"`;
-      parts.push(`<text x="${e.x}" y="${e.y + size * 1.7}"${e.anchor ? ` text-anchor="${e.anchor}"` : ""} font-family="${font}" font-size="${size}" fill="${color}"${halo}>${esc(e.text)}</text>`);
+      const size = e.size ?? CAPTION_SIZE, color = e.color ?? "#fff";
+      const font = e.font === "donuts" ? DONUTS : "'Open Sans', sans-serif";
+      const halo = e.font ? "" : `text-shadow:0 0 ${size * 0.25}px ${color === "#fff" ? "rgba(0,0,0,.45)" : "rgba(255,255,255,.45)"};`;
+      const style = `margin:0;width:100%;height:100%;overflow:hidden;font-family:${font};font-size:${size}px;line-height:${LINE};color:${color};text-align:${e.align ?? "left"};white-space:pre-wrap;overflow-wrap:break-word;${halo}`;
+      parts.push(`<foreignObject x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}"><div xmlns="http://www.w3.org/1999/xhtml" data-cap="${p.event.id}:${p.k}|${e.slot ?? ""}" style="${style.replace(/"/g, "&quot;")}">${esc(e.text)}</div></foreignObject>`);
     }
   }
   return parts.join("");
