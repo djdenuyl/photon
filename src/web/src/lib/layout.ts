@@ -568,6 +568,34 @@ function shapeParts(e: PhotoElement & { shape: Shape }): { clip: string; under: 
   return { clip: `<polygon points="${pts}"/>`, under: "", over: e.shape.tint ? `<polygon points="${pts}" fill="${e.shape.tint}" opacity=".2"/>` : "" };
 }
 
+/**
+ * A colour area's outline as printed: points on the page's edge go on into the bleed so the colour
+ * reaches the cut. A point where a slanted side meets the edge slides along that side's own line,
+ * so the side stays exactly where it was drawn; a point between two sides along the edge (or a
+ * corner) moves straight out.
+ */
+export function intoBleed(pts: [number, number][]): [number, number][] {
+  const B = PAGE.bleed, W = PAGE.w, H = PAGE.h, eps = 0.01;
+  const sides = ([x, y]: [number, number]) => [x <= eps && "l", x >= W - eps && "r", y <= eps && "t", y >= H - eps && "b"].filter(Boolean) as string[];
+  const along = (a: [number, number], b: [number, number]) => sides(a).some((s) => sides(b).includes(s));
+  const n = pts.length;
+  return pts.map((p, i) => {
+    const on = sides(p);
+    if (!on.length) return p;
+    const nb = [pts[(i - 1 + n) % n], pts[(i + 1) % n]];
+    const inward = nb.filter((q) => !along(p, q));
+    if (inward.length === 1) {
+      // slide away from the inner neighbour along their line, up to the bleed's edge
+      const q = inward[0], dx = p[0] - q[0], dy = p[1] - q[1];
+      const ts = [dx < 0 ? (-B - p[0]) / dx : dx > 0 ? (W + B - p[0]) / dx : Infinity, dy < 0 ? (-B - p[1]) / dy : dy > 0 ? (H + B - p[1]) / dy : Infinity];
+      const t = Math.min(...ts);
+      if (Number.isFinite(t)) return [p[0] + dx * t, p[1] + dy * t];
+    }
+    if (inward.length === 2) return p; // a spike touching the edge
+    return [on.includes("l") ? -B : on.includes("r") ? W + B : p[0], on.includes("t") ? -B : on.includes("b") ? H + B : p[1]];
+  });
+}
+
 /** The inside of one page (210 × 280 user units, clipped by the caller). */
 export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
   const id = `pg${uid()}`;
@@ -575,9 +603,7 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
   const parts = [`<rect x="-5" y="-5" width="${PAGE.w + 10}" height="${PAGE.h + 10}" fill="${p.background ?? "#fff"}"/>`];
   for (const e of p.elements) {
     if (e.type === "fill") {
-      // a point on the page's edge is drawn on into the bleed, so the colour reaches the cut
-      const B = PAGE.bleed, out = (v: number, max: number) => (v <= 0.01 ? -B : v >= max - 0.01 ? max + B : v);
-      parts.push(`<polygon points="${e.pts.map(([x, y]) => `${out(x, PAGE.w)},${out(y, PAGE.h)}`).join(" ")}" fill="${e.color}"/>`);
+      if (e.color !== "transparent") parts.push(`<polygon points="${intoBleed(e.pts).map((q) => q.join(",")).join(" ")}" fill="${e.color}"/>`);
     } else if (e.type === "photo" && e.shape) {
       const { clip, under, over } = shapeParts({ ...e, shape: e.shape });
       const cid = `${id}c${parts.length}`;

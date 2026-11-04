@@ -380,6 +380,12 @@ export function EditorOverlay({
       return;
     }
     if (d.mode === "vert" && !d.moved) setVertex({ sel: d.target.sel, index: d.index });
+    if (d.mode === "edge" && !d.moved && d.target.el.type === "fill") {
+      // a click (not a drag) on a side's middle: a new point there
+      const pts = d.target.el.pts, k = d.index, a = pts[k], b = pts[(k + 1) % pts.length];
+      onCommit(updateElement(edits, d.target.key, d.target.slot, { pts: [...pts.slice(0, k + 1), [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ...pts.slice(k + 1)] }));
+      setVertex({ sel: d.target.sel, index: k + 1 });
+    }
     // a plain click on one element of a group selects just that one
     if (d.mode === "move" && !d.moved && selection.size > 1) onSelect(new Set([d.sel]));
     if (d.moved && preview.current) onCommit(preview.current);
@@ -387,17 +393,8 @@ export function EditorOverlay({
     onPreview(null);
   };
 
-  // double-click on a side of a colour area adds a point there; on a page's background (where no
-  // photo is) it selects the background photo
+  // double-click on a page's background (where no photo is) selects the background photo
   const dbl = (e: React.MouseEvent) => {
-    const edge = (e.target as HTMLElement).closest<HTMLElement>("[data-edge]");
-    const it = chosen[0];
-    if (edge && it?.el.type === "fill") {
-      const k = Number(edge.dataset.edge), pts = it.el.pts;
-      const a = pts[k], b = pts[(k + 1) % pts.length];
-      onCommit(updateElement(edits, it.key, it.slot, { pts: [...pts.slice(0, k + 1), [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ...pts.slice(k + 1)] }));
-      return;
-    }
     const hit = (e.target as HTMLElement).closest<HTMLElement>("[data-sel]");
     if (hit && byId.get(hit.dataset.sel!)?.kind !== "bg") return;
     const p = toMm(e);
@@ -489,9 +486,9 @@ export function EditorOverlay({
           {poly.el.pts.map((q, k) => {
             const r = poly.el.type === "fill" ? poly.el.pts[(k + 1) % poly.el.pts.length] : q;
             return (
-              <span key={`e${k}`} data-edge={k} title="Sleep om deze zijde te verschuiven; dubbelklik voor een extra punt"
-                className="absolute z-[7] h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-move rounded-sm border-2 border-white bg-accent/70 shadow"
-                style={{ left: pct(poly.dx + (q[0] + r[0]) / 2, width), top: pct((q[1] + r[1]) / 2, PAGE.h) }} />
+              <span key={`e${k}`} data-edge={k} title="Klik voor een extra punt, sleep om deze zijde te verschuiven"
+                className="absolute z-[7] flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center rounded-sm border-2 border-white bg-accent/70 text-[11px] leading-none font-bold text-white shadow"
+                style={{ left: pct(poly.dx + (q[0] + r[0]) / 2, width), top: pct((q[1] + r[1]) / 2, PAGE.h) }}>+</span>
             );
           })}
           {poly.el.pts.map((q, k) => (
@@ -501,6 +498,22 @@ export function EditorOverlay({
           ))}
         </>
       )}
+      {poly && poly.el.type === "fill" && vertex?.sel === poly.sel && poly.el.pts.length > 3 && poly.el.pts[vertex.index] && (() => {
+        const el = poly.el;
+        const q = el.pts[vertex.index];
+        return (
+          <button type="button" aria-label="Punt verwijderen" title="Punt verwijderen"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              onCommit(updateElement(edits, poly.key, poly.slot, { pts: el.pts.filter((_, k) => k !== vertex.index) }));
+              setVertex(null);
+            }}
+            className="absolute z-[8] flex h-5 w-5 items-center justify-center rounded-full bg-[#d92d20] text-xs font-bold text-white shadow"
+            style={{ left: `calc(${pct(poly.dx + q[0], width)} + 10px)`, top: `calc(${pct(q[1], PAGE.h)} - 22px)` }}>
+            ×
+          </button>
+        );
+      })()}
       {mesh && mesh.mesh.verts.map((q, k) =>
         q[0] > -8 && q[0] < PAGE.w + 8 && q[1] > -8 && q[1] < PAGE.h + 8 ? (
           <span key={`m${k}`} data-mvert={k} title="Sleep om de indeling te veranderen"

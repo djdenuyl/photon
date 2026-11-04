@@ -22,6 +22,12 @@ Google OAuth (authorization-code flow in the backend, signed session cookie, 90 
 the base URL is https). Only accounts in `PHOTON_ALLOWED_EMAILS` get a session, re-checked per
 request. Everything except `/api/health` and the login routes needs a session, `/data` included.
 
+The agent signs in with `/api/auth/agent?t=…`: a token signed (itsdangerous, salt
+`photon-agent-login`) with the session secret, so only someone who can read that secret in Secret
+Manager can make one (scripts/shot.py). The token is valid 2 minutes, for the first allowed account
+only; the session it gives carries an `exp` and ends after 2 hours. Redirects only go to paths on
+the site.
+
 ## State (Firestore)
 
 - `state/{year}-answers` — answers to the open questions (`{data: {questionId: text}}`).
@@ -108,6 +114,10 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
 - Text colour: swatches, the page's photo tones, any colour, or "auto": `lib/contrast.ts` traces
   7 × 4 points under the frame to the topmost element (photo pixels from the thumbnails, colour
   areas, the page) and picks white or near-black, whichever contrasts more; it follows the text.
+- Colour areas are drawn into the bleed where their points are on the page edge (`intoBleed`): a
+  point where a slanted side meets the edge slides along that side's line, so the side stays where
+  it was drawn. Removing the page colour makes it transparent (the page stays selectable). Points:
+  a click on a side's "+" adds one, a picked point gets a red × (or Delete) to remove it.
 - Colour areas: every page's colour is a `fill` element (slot `pagefill`, z −1, the full page
   incl. bleed); more can be added (`add: "fill"`). A selected area shows its points (drag; click +
   Delete removes one, down to a triangle) and the middles of its sides (drag moves the side along

@@ -122,6 +122,11 @@ function applyPage(page: Page, pe: PageEdits | undefined): void {
   for (const e of baseElements(page, pe)) {
     const slot = e.slot!;
     const ed = pe?.[slot];
+    // the page's own colour is never removed, only made transparent: the page stays selectable
+    if (ed?.hidden && slot === "pagefill") {
+      out.push({ ...(e as FillElement), color: "transparent", z: -1 });
+      continue;
+    }
     if (ed?.hidden) continue;
     const z = ed?.z ?? e.z;
     if (e.type === "photo") {

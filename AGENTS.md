@@ -64,3 +64,18 @@ uv run python scripts/notes.py done <id> "what I did"      # answer and close th
 Change pages through their edits (never by rewriting the generated layout for one page), keep to
 the style guide, and say in the reply what you changed. If a request needs David's choice, answer
 with `reply` and leave the note open.
+
+## Checking your own work in the live app
+
+The app is behind Google login; the agent signs in with a one-time link that only David's gcloud
+account can make (it reads the session secret from Secret Manager; valid 2 minutes, session 2
+hours). After a deploy, look at what you changed, on desktop and on a phone:
+
+```sh
+uv run --group tools python scripts/shot.py "/boek/2025?deel=1&s=20" --out <scratch>/desk.png
+uv run --group tools python scripts/shot.py "/boek/2025?deel=1&s=39" --phone --out <scratch>/phone.png
+uv run --group tools python scripts/shot.py "/boek/2025" --click "[aria-label^='Pagina bewerken']" --phone
+```
+
+Playwright drives the installed Edge (no browser download); `--phone` emulates a real phone
+(390x844, touch). Screenshots go to the scratchpad, never into the repo.

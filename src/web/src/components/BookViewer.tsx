@@ -92,12 +92,12 @@ export function BookViewer({
       <div className={full ? "hidden" : "flex flex-wrap items-center gap-2"}>
         {toolbar}
         <select value={index} onChange={(e) => go(Number(e.target.value))} aria-label="Ga naar"
-          className="h-10 min-w-0 flex-1 rounded-full border border-hair bg-surface px-3 text-sm md:max-w-md">
+          className="h-9 w-full min-w-0 rounded-full border border-hair bg-surface px-3 text-sm md:h-10 md:w-auto md:max-w-md md:flex-1">
           {slides.map((s, i) => (
             <option key={i} value={i}>{s.label} — {s.title}</option>
           ))}
         </select>
-        <span className="text-xs text-muted tabular-nums">{index + 1} / {slides.length}</span>
+        <span className="hidden text-xs text-muted tabular-nums md:inline">{index + 1} / {slides.length}</span>
         {presentation && (
           <button type="button" onClick={enterFull} aria-label="Volledig scherm" title="Volledig scherm"
             className="ml-auto flex h-10 items-center gap-1.5 rounded-full border border-hair bg-surface px-3 text-sm">

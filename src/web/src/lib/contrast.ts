@@ -57,7 +57,7 @@ const luminance = ([r, g, b]: [number, number, number]) => 0.2126 * lin(r) + 0.7
 function under(page: Page, z: number, x: number, y: number): Element | null {
   const below = page.elements.filter((e) => (e.z ?? 0) < z).reverse();
   for (const e of below) {
-    if (e.type === "fill" && pointInPolygon(x, y, e.pts)) return e;
+    if (e.type === "fill" && e.color !== "transparent" && pointInPolygon(x, y, e.pts)) return e;
     if (e.type === "photo" && e.id) {
       if (e.shape?.kind === "poly") {
         const pts = e.shape.pts.map(([u, v]): Pt => [e.x + u * e.w, e.y + v * e.h]);

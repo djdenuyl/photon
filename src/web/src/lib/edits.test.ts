@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { year } from "@/test/fixtures";
 import { applyEdits, findPhoto, pageKey, parseEdits, serializeEdits, swapPhoto, updateElement, type Edits } from "./edits";
-import { buildBooks, pageBody, type Element, type Page } from "./layout";
+import { buildBooks, intoBleed, pageBody, type Element, type Page } from "./layout";
 import { makeMesh } from "./mesh";
 
 const { plan, photos } = year();
@@ -94,6 +94,29 @@ describe("the page's own colour", () => {
   it("is still drawn into the bleed where its points are on the edge", () => {
     const out = applyEdits(fresh(), {})[0].pages[0];
     expect(pageBody(out, photos, (p) => p.thumb)).toContain('points="-4.5,-4.5 214.5,-4.5 214.5,284.5 -4.5,284.5"');
+  });
+});
+
+describe("colour areas into the bleed", () => {
+  it("keep a slanted side on its own line (the Texel page)", () => {
+    const pts: [number, number][] = [[0, 226.36], [210, 0], [210, 280], [0, 280]];
+    const out = intoBleed(pts);
+    const onLine = ([x, y]: [number, number]) => Math.abs((y - 226.36) - ((0 - 226.36) / 210) * x) < 1e-6;
+    expect(onLine(out[0])).toBe(true);
+    expect(onLine(out[1])).toBe(true);
+    expect(out[0][0]).toBeCloseTo(-4.5);
+    expect(out[2]).toEqual([214.5, 284.5]);
+  });
+
+  it("leave points inside the page alone", () => {
+    expect(intoBleed([[10, 10], [100, 20], [50, 90]])).toEqual([[10, 10], [100, 20], [50, 90]]);
+  });
+
+  it("keep the page selectable when its colour is removed", () => {
+    const page = fresh()[0].pages[0];
+    const out = applyEdits(fresh(), updateElement({}, pageKey(page), "pagefill", { hidden: true }))[0].pages[0];
+    expect(out.elements[0]).toMatchObject({ slot: "pagefill", color: "transparent" });
+    expect(pageBody(out, photos, (p) => p.thumb)).not.toContain('fill="transparent"');
   });
 });
 

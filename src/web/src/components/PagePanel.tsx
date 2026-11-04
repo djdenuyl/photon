@@ -71,10 +71,11 @@ export function PagePanel({
       )}
       <Section title="Achtergrondkleur">
         <ColorChoice value={color} tones={tones} onChange={a.onColor} />
+        <button type="button" className={`${btn(color === "transparent")} mt-2`} onClick={() => a.onColor("transparent")}>Geen kleur</button>
       </Section>
       <Section title="Vorm">
         <p className="mb-2 text-xs text-ink-2">
-          Sleep de punten op de pagina voor een andere vorm, of de zijden om ze te verschuiven. Dubbelklik op een zijde voor een extra punt; klik een punt en druk Delete om het te verwijderen.
+          Sleep de punten voor een andere vorm. Het blokje midden op een zijde: klikken voegt daar een punt toe, slepen verschuift de zijde. Klik een punt aan en tik op het rode kruisje (of Delete) om het te verwijderen.
         </p>
         <div className="flex flex-wrap gap-1.5">
           <button type="button" className={btn()} onClick={a.onFullShape}>Hele pagina</button>
