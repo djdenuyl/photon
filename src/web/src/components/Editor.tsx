@@ -69,6 +69,9 @@ function polygonOf(i: Item): Pt[] | null {
   return null;
 }
 
+/** Items that show a photo and can trade it with another. */
+const tradeable = (i: Item) => i.kind === "photo" || i.kind === "cell" || i.kind === "shape" || i.kind === "month";
+
 /** Items picked by their outline rather than their box (they would overlap): mesh cells and colour areas. */
 const byOutline = (i: Item) => i.kind === "cell" || i.kind === "fill";
 
@@ -128,6 +131,9 @@ export function EditorOverlay({
   mesh,
   noted,
   onNotes,
+  swapFrom,
+  onSwapWith,
+  onEmpty,
   onPreview,
   onCommit,
 }: {
@@ -145,6 +151,11 @@ export function EditorOverlay({
   /** What has open notes: element selections (`key|slot`) and page keys. */
   noted: Set<string>;
   onNotes: () => void;
+  /** While choosing another photo for this item, the spread's other photos trade places with it on a click. */
+  swapFrom: Item | null;
+  onSwapWith: (other: Item) => void;
+  /** A click on a frame without a photo. */
+  onEmpty: (item: Item) => void;
   onPreview: (e: Edits | null) => void;
   onCommit: (e: Edits) => void;
 }) {
@@ -218,6 +229,15 @@ export function EditorOverlay({
     // boxes first; mesh cells and colour areas by their outline, the topmost one
     const target = (hit ? byId.get(hit.dataset.sel!) : undefined)
       ?? [...items].reverse().find((i) => byOutline(i) && pointInPolygon(p.x - i.dx, p.y, polygonOf(i) ?? []));
+    if (swapFrom && target && target.sel !== swapFrom.sel && tradeable(target)) {
+      onSwapWith(target);
+      return;
+    }
+    if (target && tradeable(target) && !photoOf(target) && !e.shiftKey) {
+      onSelect(new Set([target.sel]));
+      onEmpty(target);
+      return;
+    }
     if (target?.kind === "cell" && !e.shiftKey) {
       onSelect(new Set([target.sel]));
       drag.current = { mode: "pan", ...p, target, base: edits, moved: false };
@@ -452,6 +472,13 @@ export function EditorOverlay({
           return pts ? (
             <polygon key={i.sel} points={pts.map(([x, y]) => `${x + i.dx},${y}`).join(" ")} fill="none" stroke="var(--color-accent)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
           ) : null;
+        })}
+        {swapFrom && items.filter((i) => i.sel !== swapFrom.sel && tradeable(i)).map((i) => {
+          const pts = polygonOf(i) ?? [[i.box.x, i.box.y], [i.box.x + i.box.w, i.box.y], [i.box.x + i.box.w, i.box.y + i.box.h], [i.box.x, i.box.y + i.box.h]];
+          return (
+            <polygon key={`sw${i.sel}`} points={pts.map(([x, y]) => `${x + i.dx},${y}`).join(" ")} fill="var(--color-accent)" fillOpacity=".12"
+              stroke="var(--color-accent)" strokeWidth="2" strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+          );
         })}
         {mesh && mesh.mesh.cells.map((c, k) => (
           <polygon key={k} points={c.map((v) => `${mesh.mesh.verts[v][0] + mesh.dx},${mesh.mesh.verts[v][1]}`).join(" ")} fill="none" stroke="#fff" strokeOpacity=".8" strokeDasharray="4 3" strokeWidth="1" vectorEffect="non-scaling-stroke" />
@@ -890,8 +917,18 @@ export function EditBar({
         )}
       </span>
       <Sep />
-      <span className={`px-2 text-xs ${saving === "error" ? "text-orange" : "text-muted"}`} aria-live="polite">
-        {saving === "saved" ? "Alles opgeslagen" : saving === "pending" ? "Opslaan…" : "Opslaan mislukt, opnieuw…"}
+      <span role="status" aria-live="polite" title={saving === "saved" ? "Alles opgeslagen" : saving === "pending" ? "Opslaan…" : "Opslaan mislukt, wordt opnieuw geprobeerd"}
+        className="flex h-9 w-9 shrink-0 items-center justify-center">
+        <span className="sr-only">{saving === "saved" ? "Alles opgeslagen" : saving === "pending" ? "Opslaan" : "Opslaan mislukt"}</span>
+        {saving === "pending" ? (
+          <span className="flex gap-0.5" aria-hidden="true">
+            {[0, 1, 2].map((k) => <span key={k} className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted" style={{ animationDelay: `${k * 120}ms` }} />)}
+          </span>
+        ) : saving === "saved" ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2f9e44" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+        ) : (
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#d92d20] text-xs font-bold text-white" aria-hidden="true">!</span>
+        )}
       </span>
     </div>
   );

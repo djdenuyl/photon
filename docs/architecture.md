@@ -79,6 +79,13 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
 - The selection toolbar floats next to it, icons only with a label on hover. It offers what fits
   the selection: text field and size/colour (captions, month titles), swap, zoom, rotate, big photo,
   full page (to the bleed, toggles back), border (none / white / black), front/back, reset, hide.
+- A frame without a photo (an empty cell, a letter without one) is drawn as a light area with a
+  photo icon; a click on it opens the picker.
+- While the picker is open, the spread's other photos are highlighted: a click on one trades the
+  two photos. The picker marks photos already in the book, with "2×", "3×" when they're in it
+  more than once.
+- Save status below the book: bouncing dots while saving, a green check when saved, a red "!"
+  when it failed (it retries); a fixed size so the bar doesn't jump.
 - The swap picker: search, scope (event / month / this book / year; cover parts, backgrounds and
   month titles start at "Dit boek", grid photos at their event), people, close-up, sfeerbeeld,
   "nog niet in het boek" (not on any page or cover). Photo numbers show on every thumbnail and in
@@ -118,8 +125,8 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
 - Layouts as a mesh (`lib/mesh.ts`, edit slot `mesh` = `{mesh, cells}`): points shared by photo
   cells; each cell is drawn inset by half the gap, so gaps stay even when points move. Templates:
   Raster (rows within the margins), Schuin (rows with shaken points, full bleed, like 2022 p. 32–33)
-  and Honingraat (at least 14 hexagons, full bleed, like 2022 p. 3; extra cells get event photos
-  not yet in the book). A mesh replaces the page's plain photos; month titles, captions and
+  and Honingraat (at least 14 hexagons, full bleed, like 2022 p. 3; cells beyond the page's photos
+  stay empty). A mesh replaces the page's plain photos; month titles, captions and
   backgrounds stay. Cells (`cell0…`) can be swapped, zoomed and panned (drag inside), not moved;
   "Punten verschuiven" shows the mesh points to drag. Gap and bleed are settings of the mesh.
 - Cover letters: a letter's box is the ink of its glyph (HAPPY DONUTS metrics measured with canvas

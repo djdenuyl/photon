@@ -26,7 +26,8 @@ export function PhotoPicker({
   /** The events of the book being edited (the "Dit boek" scope). */
   bookEvents: Set<string>;
   initialScope: Scope;
-  placed: Set<string>;
+  /** How often each photo is in the book (pages, covers, month titles). */
+  placed: Map<string, number>;
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
@@ -93,12 +94,17 @@ export function PhotoPicker({
           </div>
         </div>
         <div className="p-3">
-          <p className="mb-2 text-xs text-muted">{results.length} foto's · staat een foto al in het boek, dan ruilen ze van plek</p>
+          <p className="mb-2 text-xs text-muted">{results.length} foto's · staat een foto al in het boek, dan ruilen ze van plek. Of klik een foto op de spread om die twee te ruilen.</p>
           <div className="grid grid-cols-3 gap-1.5 md:grid-cols-3">
             {results.map((p) => (
               <button key={p.id} type="button" onClick={() => onPick(p.id)} className="relative overflow-hidden rounded" title={`${p.id} · ${eventOf.get(p.id)?.title ?? ""}`}>
                 <img src={thumbUrl(p)} alt="" loading="lazy" className="aspect-square w-full object-cover" />
-                {placed.has(p.id) && <span className="absolute top-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white">in boek</span>}
+                {placed.has(p.id) && (
+                  <span className="absolute top-1 left-1 flex gap-0.5">
+                    <span className="rounded bg-black/60 px-1 text-[10px] text-white">in boek</span>
+                    {(placed.get(p.id) ?? 0) > 1 && <span className="rounded bg-[#e8590c] px-1 text-[10px] font-bold text-white">{placed.get(p.id)}×</span>}
+                  </span>
+                )}
                 <span className="absolute right-1 bottom-1 rounded bg-black/60 px-1 font-mono text-[10px] text-white">{p.id}</span>
               </button>
             ))}

@@ -63,6 +63,18 @@ describe("applyEdits", () => {
     expect(out.elements.filter((e) => e.type === "photo" && e.cell !== undefined)).toHaveLength(ids.length);
   });
 
+  it("leaves surplus mesh cells empty, drawn as an empty frame", () => {
+    const page = fresh()[0].pages[0];
+    const key = pageKey(page);
+    const ids = plainPhotos(page).map((e) => e.id);
+    const mesh = makeMesh("honingraat", ids.length, key);
+    const cells = mesh.cells.map((_, i) => ids[i] ?? "");
+    const out = applyEdits(fresh(), updateElement({}, key, "mesh", { mesh, cells }))[0].pages[0];
+    const shown = out.elements.flatMap((e) => (e.type === "photo" && e.cell !== undefined && e.id ? [e.id] : []));
+    expect(new Set(shown).size).toBe(shown.length); // no photo twice
+    expect(pageBody(out, photos, (p) => p.thumb)).toContain("#ebe7df");
+  });
+
   it("reshapes a colour area by its points", () => {
     const page = fresh()[0].pages[0];
     const tri: [number, number][] = [[0, 0], [210, 0], [0, 280]];

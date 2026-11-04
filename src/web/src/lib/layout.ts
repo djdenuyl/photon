@@ -474,9 +474,15 @@ export function placement(photo: Photo, box: Box, zoom = 1, focus?: [number, num
   return { x, y, w, h };
 }
 
+/** A frame without a photo: a light area with a photo icon in the middle. */
+function emptyFrame({ x, y, w, h }: Box): string {
+  const s = Math.max(6, Math.min(w, h) * 0.28), k = s / 24;
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#ebe7df"/><g transform="translate(${x + w / 2 - s / 2} ${y + h / 2 - s / 2}) scale(${k})" fill="none" stroke="#b3ab9c" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2"/><path d="M2.5 16l5.5-5.5 4.5 4.5 3-3 6 6"/><circle cx="16" cy="9.5" r="1.8" fill="#b3ab9c" stroke="none"/></g>`;
+}
+
 /** <image> placed to cover a box (see `placement`). */
 function placed(photo: Photo | undefined, box: Box, url: UrlFor, zoom = 1, focus?: [number, number]): string {
-  if (!photo) return "";
+  if (!photo) return emptyFrame(box);
   const { x, y, w, h } = placement(photo, box, zoom, focus);
   return `<image href="${url(photo)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"/>`;
 }

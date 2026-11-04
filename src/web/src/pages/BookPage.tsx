@@ -223,15 +223,15 @@ export function BookPage() {
     const plain = page.elements.flatMap((e) => (e.type === "photo" && !e.bg && (!e.shape || e.cell !== undefined) && e.id ? [e.id] : []));
     const mesh = makeMesh(template, Math.max(1, plain.length), opts?.seed ?? key, opts);
     // more cells than photos (honeycomb): more photos of the event that aren't in the book yet
-    const spare = page.event.photoIds.filter((id) => !placedIds.has(id) && !plain.includes(id));
-    const cells = mesh.cells.map((_, i) => plain[i] ?? spare[i - plain.length] ?? plain[i % Math.max(1, plain.length)] ?? "");
+    // more cells than photos (a honeycomb): the rest stay empty, to be filled by a click
+    const cells = mesh.cells.map((_, i) => plain[i] ?? "");
     commit({ ...edits, [key]: { ...pe, mesh: { mesh, cells } } });
   };
 
   // a new mesh shape for the same photos (cells beyond the old count are filled like setMesh does)
   const setMeshKeepCells = (key: string, mesh: Mesh) => {
     const old = edits[key]?.mesh?.cells ?? [];
-    const cells = mesh.cells.map((_, i) => old[i] ?? old[i % Math.max(1, old.length)] ?? "");
+    const cells = mesh.cells.map((_, i) => old[i] ?? "");
     const pe = Object.fromEntries(Object.entries(edits[key] ?? {}).filter(([slot]) => !(slot.startsWith("cell") && Number(slot.slice(4)) >= cells.length)));
     commit({ ...edits, [key]: { ...pe, mesh: { mesh, cells } } });
   };
@@ -361,7 +361,12 @@ export function BookPage() {
   const data = year.data;
   const photosPlaced = book.pages.reduce((n, p) => n + p.elements.filter((e) => e.type === "photo").length, 0);
   // every photo used anywhere in either book, the covers included
-  const placedIds = new Set(books!.flatMap((b) => allPages(b).flatMap((p) => p.elements.flatMap((e) => (e.type === "photo" ? [e.id] : e.type === "month" && e.photo ? [e.photo] : [])))));
+  // how often each photo is in the books (pages, covers, month titles)
+  const placedIds = new Map<string, number>();
+  for (const b of books!) for (const p of allPages(b)) for (const e of p.elements) {
+    const id = e.type === "photo" ? e.id : e.type === "month" ? e.photo : null;
+    if (id) placedIds.set(id, (placedIds.get(id) ?? 0) + 1);
+  }
 
   const onStageClick = (e: React.MouseEvent) => {
     if (editing) return;
@@ -462,6 +467,16 @@ export function BookPage() {
                 return at && m && meshPoints ? { key: meshPoints, dx: at.dx, mesh: m } : null;
               })()}
               noted={noted}
+              swapFrom={swapping}
+              onSwapWith={(other) => {
+                // trade the two photos (wherever they are on the spread)
+                const a = swapping!, pa = photoOf(a) ?? "", pb = photoOf(other) ?? "";
+                let next = updateElement(edits, a.key, a.slot, { photo: pb, zoom: undefined, focus: undefined });
+                next = updateElement(next, other.key, other.slot, { photo: pa, zoom: undefined, focus: undefined });
+                commit(next);
+                setSwapping(null);
+              }}
+              onEmpty={(item) => openPanel("swap", item)}
               onNotes={() => setNotesOpen(true)}
               bar={pageItem || !desktop ? null : <SelectionBar selected={selected} a={barActions} />}
               onPreview={setPreview}
