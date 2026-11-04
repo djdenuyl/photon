@@ -8,7 +8,7 @@ Run with: uv run python main.py
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 from uvicorn import run
@@ -28,6 +28,10 @@ def create_prod_app() -> FastAPI:
             candidate = (WEB_DIST / path).resolve()
             if path and candidate.is_file() and candidate.is_relative_to(WEB_DIST):
                 return FileResponse(candidate)
+            # SPA routes never contain a dot: a dotted path that isn't a file is
+            # a crawler or scanner probe (/sitemap.xml, /.env, /wp-login.php)
+            if "." in path:
+                raise HTTPException(status_code=404)
             return FileResponse(WEB_DIST / "index.html")
 
     return app
