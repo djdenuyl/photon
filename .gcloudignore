@@ -1,0 +1,16 @@
+# keep Cloud Build uploads small; the Docker build re-installs everything
+.git/
+.venv/
+node_modules/
+src/web/dist/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+.gcloud-env.yaml
+/docs/
+/tests/
+/data/
+/tools/
+/scripts/
+/web/

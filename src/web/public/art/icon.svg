@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="220" fill="#161513"/>
+  <!-- an open photo book: two pages with a photo grid in the style guide colours -->
+  <g transform="translate(152 262)">
+    <rect width="352" height="500" rx="14" fill="#f6f4ef"/>
+    <rect x="368" width="352" height="500" rx="14" fill="#f6f4ef"/>
+    <rect x="28" y="28" width="296" height="200" rx="6" fill="#2a78d6"/>
+    <rect x="28" y="244" width="140" height="228" rx="6" fill="#eb6834"/>
+    <rect x="184" y="244" width="140" height="228" rx="6" fill="#1baf7a"/>
+    <rect x="396" y="28" width="140" height="140" rx="6" fill="#eda100"/>
+    <rect x="552" y="28" width="140" height="140" rx="6" fill="#e87ba4"/>
+    <rect x="396" y="184" width="296" height="288" rx="6" fill="#4a3aa7"/>
+  </g>
+</svg>
