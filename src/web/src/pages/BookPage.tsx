@@ -1,14 +1,16 @@
 // This year's book: the generated layout with your picks and edits applied. Leaf through it
 // (spreads on desktop, pages on a phone) or switch on the editor.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BookViewer, type Slide } from "@/components/BookViewer";
-import { EditorOverlay, EditorToolbar, itemsFor, PhotoPicker, type EditMode, type Item } from "@/components/Editor";
+import { EditBar, EditorOverlay, itemsFor, PhotoBar, PhotoPicker, type Item } from "@/components/Editor";
 import { PhotoSheet } from "@/components/PhotoSheet";
 import { useIsDesktop } from "@/components/Shell";
-import { displayUrl, thumbUrl, useSaveState, useStateMap, useYearData } from "@/lib/data";
+import { displayUrl, thumbUrl, useSaveState, useStateMap, useYearData, YEAR } from "@/lib/data";
 import { applyEdits, parseEdits, serializeEdits, swapPhoto, updateElement, type Edits } from "@/lib/edits";
 import { buildBooks, coverBack, coverFront, PAGE, pageBody, renderPage, renderSpread, type Book, type Page } from "@/lib/layout";
+import { Saver, type SaveStatus } from "@/lib/saver";
 import type { Photo, Photos, PlanEvent } from "@/lib/types";
 
 interface BookSlide extends Slide {
@@ -50,7 +52,9 @@ export function BookPage() {
   const picks = useStateMap("picks").data;
   const savePicks = useSaveState("picks");
   const remoteEdits = useStateMap("edits").data;
-  const saveEdits = useSaveState("edits");
+  const qc = useQueryClient();
+  const [saving, setSaving] = useState<SaveStatus>("saved");
+  const [saver] = useState(() => new Saver(`/api/state/${YEAR}/edits`, setSaving));
   const desktop = useIsDesktop();
   const [params, setParams] = useSearchParams();
   const bookIndex = params.get("deel") === "2" ? 1 : 0;
@@ -65,7 +69,21 @@ export function BookPage() {
   const [future, setFuture] = useState<Edits[]>([]);
   const [preview, setPreview] = useState<Edits | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set());
-  const [mode, setMode] = useState<EditMode>("move");
+  const [snap, setSnapState] = useState(() => {
+    try {
+      return localStorage.getItem("photon-snap") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const setSnap = (on: boolean) => {
+    setSnapState(on);
+    try {
+      localStorage.setItem("photon-snap", on ? "on" : "off");
+    } catch {
+      // private mode: the toggle just isn't remembered
+    }
+  };
   const [swapping, setSwapping] = useState<Item | null>(null);
   const edits = local ?? parseEdits(remoteEdits);
   const shown = preview ?? edits;
@@ -85,29 +103,48 @@ export function BookPage() {
     setSelection(new Set());
   };
 
-  const saveTimer = useRef<number | undefined>(undefined);
-  const commit = (next: Edits) => {
-    setPast((p) => [...p.slice(-99), edits]);
-    setFuture([]);
+  // every change (and every undo/redo) is stored; the saver batches them into few writes
+  const store = (next: Edits) => {
     setLocal(next);
-    window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => saveEdits.mutate(serializeEdits(next)), 700);
+    const data = serializeEdits(next);
+    qc.setQueryData(["state", YEAR, "edits"], data);
+    saver.save(data);
+  };
+  const commit = (next: Edits) => {
+    setPast((p) => [...p.slice(-199), edits]);
+    setFuture([]);
+    store(next);
   };
   const undo = () => {
     if (!past.length) return;
     setFuture((f) => [edits, ...f]);
     setPast((p) => p.slice(0, -1));
-    const prev = past[past.length - 1];
-    setLocal(prev);
-    saveEdits.mutate(serializeEdits(prev));
+    store(past[past.length - 1]);
   };
   const redo = () => {
     if (!future.length) return;
     setPast((p) => [...p, edits]);
     setFuture((f) => f.slice(1));
-    setLocal(future[0]);
-    saveEdits.mutate(serializeEdits(future[0]));
+    store(future[0]);
   };
+  useEffect(() => {
+    const onHide = () => saver.flushOnExit();
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      void saver.flush();
+    };
+  }, [saver]);
+
+  // a click anywhere outside the photos (and the editor's own controls) clears the selection
+  useEffect(() => {
+    if (!editing) return;
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as Element).closest("[data-editing], [data-keep-selection], [role=dialog]")) setSelection(new Set());
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [editing]);
 
   const current = slides[slide];
   const items = current && editing ? itemsFor(current.pages) : [];
@@ -153,6 +190,13 @@ export function BookPage() {
   const photosPlaced = book.pages.reduce((n, p) => n + p.elements.filter((e) => e.type === "photo").length, 0);
   const placedIds = new Set(books!.flatMap((b) => b.pages.flatMap((p) => p.elements.flatMap((e) => (e.type === "photo" ? [e.id] : [])))));
   const one = selected.length === 1 ? selected[0] : null;
+  const togglePick = () => {
+    if (!one) return;
+    const next = { ...(picks ?? {}) };
+    if (next[one.page.event.id] === one.el.id) delete next[one.page.event.id];
+    else next[one.page.event.id] = one.el.id;
+    savePicks.mutate(next);
+  };
 
   const onStageClick = (e: React.MouseEvent) => {
     if (editing) return;
@@ -201,7 +245,16 @@ export function BookPage() {
               edits={edits}
               selection={selection}
               onSelect={setSelection}
-              mode={mode}
+              snap={snap}
+              bar={
+                <PhotoBar
+                  selected={selected}
+                  apply={apply}
+                  onSwap={() => one && setSwapping(one)}
+                  onPick={togglePick}
+                  pickedHere={!!one && picks?.[one.page.event.id] === one.el.id}
+                />
+              }
               onPreview={setPreview}
               onCommit={commit}
             />
@@ -210,24 +263,14 @@ export function BookPage() {
       />
       {editing && (
         current.pages.length ? (
-          <EditorToolbar
-            selected={selected}
-            mode={mode}
-            onMode={setMode}
-            apply={apply}
-            onSwap={() => one && setSwapping(one)}
-            onPick={() => {
-              if (!one) return;
-              const next = { ...(picks ?? {}) };
-              if (next[one.page.event.id] === one.el.id) delete next[one.page.event.id];
-              else next[one.page.event.id] = one.el.id;
-              savePicks.mutate(next);
-            }}
-            pickedHere={!!one && picks?.[one.page.event.id] === one.el.id}
+          <EditBar
             onUndo={undo}
             onRedo={redo}
             canUndo={past.length > 0}
             canRedo={future.length > 0}
+            snap={snap}
+            onSnap={setSnap}
+            saving={saving}
             onResetPages={() => {
               const keys = current.pages.flatMap(({ page }) => (page ? [`${page.event.id}:${page.k}`] : []));
               const next = { ...edits };
@@ -235,7 +278,11 @@ export function BookPage() {
               commit(next);
               setSelection(new Set());
             }}
-            onDone={() => { setEditing(false); setSelection(new Set()); }}
+            onDone={() => {
+              setEditing(false);
+              setSelection(new Set());
+              void saver.flush();
+            }}
           />
         ) : (
           <p className="mt-3 text-center text-sm text-muted">Het omslag is nog niet te bewerken.</p>

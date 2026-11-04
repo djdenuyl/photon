@@ -63,9 +63,16 @@ page (`eventId:k`, k = the page within its event) and slot (the photo the layout
 `{photo?, x?, y?, w?, h?, zoom?, focus?, rot?, hidden?}`. `applyEdits` applies them after `buildBooks`.
 A swap with a photo already in the book trades the two places.
 
-- Select: click (shift adds), or drag a band on empty space. Drag moves the selection; corner handles
-  resize; "Foto" mode pans the photo inside its frame (focus point). Zoom 1–4×, rotate ±3°.
+- Select: click (shift adds), or drag a band on empty space; a click outside the photos clears it.
+  Drag a photo to move the frame (the whole selection); corner handles resize; the see-through
+  centre handle of a single photo moves the photo inside its frame.
+- The photo toolbar (zoom, rotate, swap, big photo, reset, hide) floats above the selection; history,
+  snapping, save status and "Herstel pagina" sit below the book.
+- Snapping (toggle, remembered per browser; Alt = off while held): 2 mm to page edges, margins and
+  centre lines, and to other photos' edges, centres and edge + 5 mm gap; pink guides show the match.
 - Keys: arrows nudge 1 mm (shift 5), Delete hides, Esc deselects, ctrl+Z / ctrl+Y.
+- Saving (`lib/saver.ts`): every change and undo is stored; writes are batched (500 ms), sent one
+  at a time, retried on failure and flushed with keepalive when the page closes.
 - "Wissel" opens a picker: search, scope (event/month/year), people, close-up, sfeerbeeld.
 - Not editable yet: the cover, backgrounds/panoramas, captions and month titles.
 
