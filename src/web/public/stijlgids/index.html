@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stijlgids Jaarboeken</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&family=Open+Sans:wght@400;700&family=League+Spartan:wght@800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Photon · stijlgids</p>
+      <h1>Het Jaar Rond</h1>
+      <p class="lede" id="lede">Wat de jaarboeken 2020–2024 gemeen hebben, waar ze afwijken, en wat dat betekent voor het volgende boek.</p>
+      <div class="stats" id="hero-stats"></div>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <div class="wrap">
+      <a href="#basis">Basis</a>
+      <a href="#omslag">Omslag</a>
+      <a href="#variatie">Variatie</a>
+      <a href="#ritme">Ritme</a>
+      <a href="#context">Context</a>
+      <a href="#tekst">Tekst</a>
+      <a href="#regels">Regels</a>
+      <a href="#draaiboek">Draaiboek</a>
+      <a href="#galerij">Galerij</a>
+      <button id="theme-toggle" class="ghost" type="button" aria-label="Thema wisselen">◐</button>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section id="basis">
+      <h2>De basis</h2>
+      <p class="section-lede">Het raster dat het grootste deel van elk boek draagt. Deze maten zijn direct uit de Albelli-projecten gemeten.</p>
+      <div class="spec-grid" id="spec-grid"></div>
+      <figure class="figure">
+        <div id="basis-example" class="example-row"></div>
+        <figcaption>Typische spreads met het standaardraster. Hulplijnen tonen de 10 mm-buitenmarge en de rug.</figcaption>
+      </figure>
+    </section>
+
+    <section id="omslag">
+      <h2>Omslag en maandopeners</h2>
+      <p class="section-lede">Beide maak je buiten Albelli, in Inkscape, en upload je als afbeelding. Zo zien ze eruit en zo zijn ze opgebouwd.</p>
+      <div class="spec-grid" id="cover-specs"></div>
+      <h3>Omslagen</h3>
+      <div class="cover-grid" id="covers"></div>
+      <h3>Maandopeners</h3>
+      <p class="section-lede" id="month-lede"></p>
+      <div id="months"></div>
+      <h3>Bronbestanden</h3>
+      <ul class="sources" id="cover-sources"></ul>
+    </section>
+
+    <section id="variatie">
+      <h2>Variatie</h2>
+      <p class="section-lede">Ongeveer de helft van de spreads wijkt bewust af van het raster. Klik op een techniek om voorbeelden te zien.</p>
+      <div class="two-col">
+        <div>
+          <h3>Hoe vaak, als aandeel van alle spreads</h3>
+          <div id="kind-bars" class="bars"></div>
+        </div>
+        <div>
+          <h3>Per pagina</h3>
+          <div id="page-bars" class="bars"></div>
+        </div>
+      </div>
+      <div class="kind-examples" id="kind-examples"></div>
+      <h3>Per boek</h3>
+      <div class="table-scroll"><table class="heat" id="heat"></table></div>
+    </section>
+
+    <section id="ritme">
+      <h2>Ritme</h2>
+      <p class="section-lede">Elk blokje is een spread, van voor naar achter. Kleur op opmaaktechniek of op onderwerp.</p>
+      <div class="filters"><div class="chips" id="rhythm-mode">
+        <button class="chip" type="button" data-mode="technique" aria-pressed="true">Techniek</button>
+        <button class="chip" type="button" data-mode="theme" aria-pressed="false">Onderwerp</button>
+      </div></div>
+      <div class="legend" id="rhythm-legend"></div>
+      <div id="rhythm"></div>
+    </section>
+
+    <section id="context">
+      <h2>Context</h2>
+      <p class="section-lede">Waarom een spread eruitziet zoals hij eruitziet: wat er gebeurde, hoeveel ruimte het kreeg, en wat grote en speelse spreads gemeen hebben. Gebaseerd op een inhoudelijke analyse van elke spread, met opnamedatums en onderschriften.</p>
+
+      <h3>Hoe een boek is opgebouwd</h3>
+      <div class="insights" id="structure"></div>
+
+      <h3>Ruimte per gebeurtenis</h3>
+      <p class="section-lede">Eén gebeurtenis krijgt in principe één spread. Wat langer duurt krijgt ruwweg één spread per dag.</p>
+      <div class="two-col">
+        <div><h4>Gebeurtenissen van één dag</h4><div id="budget-bars" class="bars"></div></div>
+        <div><h4>Meerdaagse gebeurtenissen</h4><div id="budget-multi" class="multi-list"></div></div>
+      </div>
+      <div class="two-col">
+        <div><h4>Aandeel zomervakantie per boek</h4><div id="summer-bars" class="bars"></div></div>
+        <div><h4>Hoe linker- en rechterpagina samenhangen</h4><div class="legend" id="pair-legend"></div><div id="pair-bars"></div></div>
+      </div>
+
+      <h3>Wat steeds terugkomt</h3>
+      <p class="section-lede">Spreads per jaar die een traditie noemen (in onderschrift of als onderwerp). Klik op een cel om die spreads te zien.</p>
+      <div class="table-scroll"><table class="heat" id="traditions"></table></div>
+
+      <h3>Waarom groot?</h3>
+      <div class="legend" id="hero-legend"></div>
+      <div class="hero-grid" id="heroes"></div>
+
+      <h3>Waarom speels?</h3>
+      <div class="play-grid" id="playful"></div>
+
+      <h3>Per boek</h3>
+      <div id="book-notes"></div>
+    </section>
+
+    <section id="tekst">
+      <h2>Tekst</h2>
+      <p class="section-lede">Hoe en waar onderschriften en titels staan.</p>
+      <div class="spec-grid" id="text-specs"></div>
+      <div class="two-col">
+        <div>
+          <h3>Plaatsing</h3>
+          <div id="text-placement" class="bars"></div>
+        </div>
+        <div>
+          <h3>Kleur</h3>
+          <div id="text-color" class="bars"></div>
+        </div>
+      </div>
+      <h3>Voorbeelden</h3>
+      <div class="text-examples" id="text-examples"></div>
+    </section>
+
+    <section id="regels">
+      <h2>Regels voor het volgende boek</h2>
+      <p class="section-lede">Afgeleid uit 2022–2024, het meest recente en meest consistente deel van de reeks.</p>
+      <ol class="rules" id="rules"></ol>
+    </section>
+
+    <section id="draaiboek">
+      <h2>Draaiboek</h2>
+      <p class="section-lede">Een sjabloon voor de voorselectie: de spreads die elk jaar terugkomen, wanneer ze vallen en hoeveel ruimte ze meestal krijgen. Gebruik het als checklist bij het album in Google Foto's.</p>
+      <div id="playbook"></div>
+    </section>
+
+    <section id="galerij">
+      <h2>Galerij</h2>
+      <div class="filters">
+        <label>Boek <select id="f-book"></select></label>
+        <div class="chips" id="f-kinds"></div>
+      </div>
+      <p class="count" id="gallery-count"></p>
+      <div class="gallery" id="gallery"></div>
+    </section>
+  </main>
+
+  <dialog id="viewer">
+    <div class="viewer-head">
+      <div>
+        <p class="eyebrow" id="viewer-book"></p>
+        <h3 id="viewer-title"></h3>
+      </div>
+      <div class="viewer-actions">
+        <label><input type="checkbox" id="viewer-guides" checked> hulplijnen</label>
+        <button class="ghost" id="viewer-prev" type="button">←</button>
+        <button class="ghost" id="viewer-next" type="button">→</button>
+        <button class="ghost" id="viewer-close" type="button">✕</button>
+      </div>
+    </div>
+    <div id="viewer-svg" class="viewer-svg"></div>
+    <div id="viewer-meta" class="viewer-meta"></div>
+  </dialog>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/* Same palette as the style guide: warm paper, near-black ink, the guide's blue and orange. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+
+  --color-page: #f6f4ef;
+  --color-surface: #fcfcfb;
+  --color-ink: #161513;
+  --color-ink-2: #52514e;
+  --color-muted: #898781;
+  --color-hair: #e1e0d9;
+  --color-accent: #2a78d6;
+  --color-orange: #eb6834;
+}
+
+html,
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* rendered spreads and pages */
+.spread {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
+}
+
+.lay-photo {
+  cursor: pointer;
+}

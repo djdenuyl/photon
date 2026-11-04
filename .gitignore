@@ -1,0 +1,26 @@
+# local env / secrets
+.env
+.gcloud-env.yaml
+
+# personal photos and exports stay local (and in the private bucket)
+data/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.idea/
+
+# node / vite
+node_modules/
+src/web/dist/
+
+# leftovers from the old editor on main
+components/
+handlers/
+utils/
+
+# misc
+.DS_Store
