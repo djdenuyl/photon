@@ -471,6 +471,7 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
   return (
     <div className="relative flex flex-wrap items-center justify-center gap-0.5 rounded-xl border border-hair bg-surface p-1 text-ink shadow-lg">
       {!one && <span className="px-1.5 text-xs text-muted">{selected.length} geselecteerd</span>}
+      {one && photoOf(one) && <span className="px-1.5 font-mono text-xs text-muted select-all" title="Fotonummer">{photoOf(one)}</span>}
       {caption && (
         <>
           <TextField key={one!.sel + caption.text} value={caption.text} label="Tekst" onCommit={(text) => a.apply(() => ({ text }))} />

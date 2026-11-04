@@ -10,7 +10,7 @@ import { PhotoPicker } from "@/components/PhotoPicker";
 import { PhotoSheet } from "@/components/PhotoSheet";
 import { useIsDesktop } from "@/components/Shell";
 import { displayUrl, thumbUrl, useSaveState, useStateMap, useYearData, YEAR } from "@/lib/data";
-import { applyEdits, parseEdits, serializeEdits, swapPhoto, updateElement, type ElementEdit, type Edits } from "@/lib/edits";
+import { allPages, applyEdits, parseEdits, serializeEdits, swapPhoto, updateElement, type ElementEdit, type Edits } from "@/lib/edits";
 import { buildBooks, PAGE, pageBody, renderPage, renderSpread, type Book, type Page } from "@/lib/layout";
 import { Saver, type SaveStatus } from "@/lib/saver";
 import type { Photo, Photos, PlanEvent } from "@/lib/types";
@@ -77,7 +77,12 @@ export function BookPage() {
   const remoteEdits = useStateMap("edits").data;
   const qc = useQueryClient();
   const [saving, setSaving] = useState<SaveStatus>("saved");
-  const [saver] = useState(() => new Saver(`/api/state/${YEAR}/edits`, setSaving));
+  const [saver] = useState(
+    () => new Saver(`/api/state/${YEAR}/edits`, setSaving, (server) => qc.setQueryData(["state", YEAR, "edits"], server)),
+  );
+  useEffect(() => {
+    if (remoteEdits) saver.setBase(remoteEdits);
+  }, [saver, remoteEdits]);
   const desktop = useIsDesktop();
   const [params, setParams] = useSearchParams();
   const bookIndex = params.get("deel") === "2" ? 1 : 0;
@@ -85,16 +90,15 @@ export function BookPage() {
   const perPage = choice ?? !desktop;
   const [open, setOpen] = useState<{ photo: Photo; event: PlanEvent | null } | null>(null);
 
-  // editor state: local edits (ahead of the server), undo/redo, live preview while dragging
+  // editor state: undo/redo and the live preview while dragging (the edits live in the query cache)
   const [editing, setEditing] = useState(true);
-  const [local, setLocal] = useState<Edits | null>(null);
   const [past, setPast] = useState<Edits[]>([]);
   const [future, setFuture] = useState<Edits[]>([]);
   const [preview, setPreview] = useState<Edits | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [snap, setSnap] = useSnapSetting();
   const [swapping, setSwapping] = useState<Item | null>(null);
-  const edits = useMemo(() => local ?? parseEdits(remoteEdits), [local, remoteEdits]);
+  const edits = useMemo(() => parseEdits(remoteEdits), [remoteEdits]);
   const shown = preview ?? edits;
 
   const books = useMemo(
@@ -114,7 +118,6 @@ export function BookPage() {
 
   // every change (and every undo/redo) is stored; the saver batches them into few writes
   const store = (next: Edits) => {
-    setLocal(next);
     const data = serializeEdits(next);
     qc.setQueryData(["state", YEAR, "edits"], data);
     saver.save(data);
@@ -227,7 +230,8 @@ export function BookPage() {
   if (!book || !year.data || !current) return <p className="p-6 text-muted">Geen gegevens gevonden.</p>;
   const data = year.data;
   const photosPlaced = book.pages.reduce((n, p) => n + p.elements.filter((e) => e.type === "photo").length, 0);
-  const placedIds = new Set(books!.flatMap((b) => b.pages.flatMap((p) => p.elements.flatMap((e) => (e.type === "photo" ? [e.id] : [])))));
+  // every photo used anywhere in either book, the covers included
+  const placedIds = new Set(books!.flatMap((b) => allPages(b).flatMap((p) => p.elements.flatMap((e) => (e.type === "photo" ? [e.id] : e.type === "month" && e.photo ? [e.photo] : [])))));
 
   const onStageClick = (e: React.MouseEvent) => {
     if (editing) return;

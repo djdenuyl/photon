@@ -43,6 +43,15 @@ def save_state(year: int, kind: str, data: dict[str, str], email: str) -> None:
     )
 
 
+def patch_state(year: int, kind: str, changes: dict[str, str | None], email: str) -> None:
+    """Set (or, for None, remove) single keys, leaving the rest of the map as it is."""
+    data = {k: firestore.DELETE_FIELD if v is None else v for k, v in changes.items()}
+    _ref(year, kind).set(
+        {"data": data, "updated_by": email, "updated_at": datetime.now(UTC).isoformat()},
+        merge=True,
+    )
+
+
 def list_years() -> list[dict[str, Any]]:
     return [snap.to_dict() or {} for snap in client().collection(YEARS).stream()]
 

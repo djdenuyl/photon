@@ -2,7 +2,8 @@
 editor's changes per page.
 
 Each is a small string map (edits: page key -> JSON), stored as one Firestore document
-(`state/{year}-{kind}`); a PUT replaces the whole map.
+(`state/{year}-{kind}`); a PUT replaces the whole map, a PATCH sets or removes single keys
+(so two open tabs only overwrite each other's pages when both change the same page).
 """
 
 from typing import Literal
@@ -26,3 +27,9 @@ def get_state(year: int, kind: Kind, _user: User) -> dict[str, str]:
 def put_state(year: int, kind: Kind, body: dict[str, str], user: User) -> dict[str, str]:
     db.save_state(year, kind, body, user.email)
     return body
+
+
+@router.patch("/{year}/{kind}")
+def patch_state(year: int, kind: Kind, body: dict[str, str | None], user: User) -> dict[str, str]:
+    db.patch_state(year, kind, body, user.email)
+    return db.get_state(year, kind)

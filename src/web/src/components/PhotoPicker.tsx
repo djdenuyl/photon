@@ -34,6 +34,7 @@ export function PhotoPicker({
   const [company, setCompany] = useState<Company>("all");
   const [closeup, setCloseup] = useState(false);
   const [scenic, setScenic] = useState(false);
+  const [unused, setUnused] = useState(false);
   const [scope, setScope] = useState<Scope>(initialScope);
   const [query, setQuery] = useState("");
   const eventOf = useMemo(() => {
@@ -56,10 +57,11 @@ export function PhotoPicker({
       if (company === "others" && !(l.others ?? 0)) return false;
       if (closeup && !l.closeup) return false;
       if (scenic && !l.scenic) return false;
+      if (unused && placed.has(p.id)) return false;
       if (q && !`${p.id} ${ev.title} ${ev.summary}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [photos, eventOf, current, event, bookEvents, people, company, closeup, scenic, scope, query]);
+  }, [photos, eventOf, current, event, bookEvents, people, company, closeup, scenic, unused, placed, scope, query]);
 
   const chip = (on: boolean) => `rounded-full border px-3 py-1 text-xs ${on ? "border-ink bg-ink text-page" : "border-hair bg-page text-ink-2"}`;
   return createPortal(
@@ -70,7 +72,7 @@ export function PhotoPicker({
           {current && <img src={thumbUrl(current)} alt="" className="h-12 w-12 rounded object-cover" />}
           <div className="min-w-0 flex-1">
             <div className="font-semibold">Wissel foto</div>
-            <div className="truncate text-xs text-muted">{event.title}</div>
+            <div className="truncate text-xs text-muted">{current && <span className="font-mono">{current.id} · </span>}{event.title}</div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-hair px-3 py-1.5 text-sm">Sluiten</button>
         </div>
@@ -95,6 +97,7 @@ export function PhotoPicker({
             <button type="button" className={chip(company === "others")} onClick={() => setCompany(company === "others" ? "all" : "others")}>met anderen</button>
             <button type="button" className={chip(closeup)} onClick={() => setCloseup(!closeup)}>close-up</button>
             <button type="button" className={chip(scenic)} onClick={() => setScenic(!scenic)}>sfeerbeeld</button>
+            <button type="button" className={chip(unused)} onClick={() => setUnused(!unused)}>nog niet in het boek</button>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-3">
@@ -104,6 +107,7 @@ export function PhotoPicker({
               <button key={p.id} type="button" onClick={() => onPick(p.id)} className="relative overflow-hidden rounded" title={`${p.id} · ${eventOf.get(p.id)?.title ?? ""}`}>
                 <img src={thumbUrl(p)} alt="" loading="lazy" className="aspect-square w-full object-cover" />
                 {placed.has(p.id) && <span className="absolute top-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white">in boek</span>}
+                <span className="absolute right-1 bottom-1 rounded bg-black/60 px-1 font-mono text-[10px] text-white">{p.id}</span>
               </button>
             ))}
           </div>

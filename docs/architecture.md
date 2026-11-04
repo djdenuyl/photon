@@ -29,7 +29,8 @@ request. Everything except `/api/health` and the login routes needs a session, `
 - `state/{year}-edits` — editor changes per page (`{data: {"eventId:k": json}}`, see below).
 - `years/{year}` — years started with "+ Nieuw jaar" (`GET/POST /api/years`).
 
-The state maps are small maps replaced as a whole (`PUT /api/state/{year}/{kind}`); the client updates its
+The state maps are small maps, replaced as a whole or changed per key with PATCH (the editor
+does this), (`PUT /api/state/{year}/{kind}`); the client updates its
 cache first, so the book re-lays out at once.
 
 ## The book (`lib/layout.ts`)
@@ -78,13 +79,17 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   the selection: text field and size/colour (captions, month titles), swap, zoom, rotate, big photo,
   full page (to the bleed, toggles back), border (none / white / black), front/back, reset, hide.
 - The swap picker: search, scope (event / month / this book / year; cover parts, backgrounds and
-  month titles start at "Dit boek", grid photos at their event), people, close-up, sfeerbeeld.
+  month titles start at "Dit boek", grid photos at their event), people, close-up, sfeerbeeld,
+  "nog niet in het boek" (not on any page or cover). Photo numbers show on every thumbnail and in
+  the selection toolbar.
 - Below the book: undo/redo, snapping, add text, reset these pages, save status.
 - Snapping (toggle, remembered per browser; Alt = off while held): 2 mm to page edges, margins and
   centre lines, and to other elements' edges, centres and edge + 5 mm gap; pink guides show the match.
 - Keys: arrows nudge 1 mm (shift 5), Delete hides, Esc deselects, ctrl+Z / ctrl+Y.
 - Saving (`lib/saver.ts`): every change and undo is stored; writes are batched (500 ms), sent one
-  at a time, retried on failure and flushed with keepalive when the page closes.
+  at a time, retried on failure and flushed with keepalive when the page closes. Only the pages
+  that differ from the last known server copy are sent (PATCH), and the server's merged map comes
+  back into the cache, so two tabs only overwrite each other on the same page.
 - Not editable yet: rotating month titles and captions, moving elements between pages.
 
 ## Years (`/boek/:year`)
