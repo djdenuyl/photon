@@ -18,7 +18,21 @@ const MAX_PER_PAGE = 8;
 const MONTH_TOKEN = "#month:";
 
 export interface Box { x: number; y: number; w: number; h: number }
-export interface PhotoElement extends Box { type: "photo"; id: string; big?: boolean; bg?: boolean; frame?: boolean }
+export interface PhotoElement extends Box {
+  type: "photo";
+  id: string;
+  big?: boolean;
+  bg?: boolean;
+  frame?: boolean;
+  /** Editor: the photo the layout put here (the edit key), when a swap replaced `id`. */
+  slot?: string;
+  /** Editor: zoom inside the frame (1 = just covering it). */
+  zoom?: number;
+  /** Editor: focus point (fractions of the photo) kept in the middle of the frame. */
+  focus?: [number, number];
+  /** Editor: frame rotation in degrees. */
+  rot?: number;
+}
 export interface MonthElement extends Box { type: "month"; name: string; photo: string | null }
 export interface CaptionElement { type: "caption"; text: string; x: number; y: number }
 export type Element = PhotoElement | MonthElement | CaptionElement;
@@ -27,6 +41,8 @@ export interface Page {
   event: PlanEvent;
   elements: Element[];
   index: number;
+  /** Page number within its event: with the event id the stable key for edits. */
+  k: number;
   style: Style | null;
   background?: string;
 }
@@ -241,7 +257,7 @@ export function buildBooks(plan: Plan, photos: Photos, picks: StringMap = {}): B
 
       for (let k = 0; k < n; k++) {
         const special = k === 0 || (spreadWide && k === 1);
-        const page: Page = { event, elements: [], index: pages.length, style: special ? style : null };
+        const page: Page = { event, elements: [], index: pages.length, k, style: special ? style : null };
         const isLeft = pages.length % 2 === 1;
         const box: Box = { x: m, y: m, w: PAGE.w - 2 * m, h: PAGE.h - 2 * m };
         const ids = fullPage && k === 0 ? [] : chunks.shift() ?? [];
@@ -385,20 +401,30 @@ function buildCover(events: PlanEvent[], bi: number, photos: Photos): Cover {
 
 export type UrlFor = (p: Photo) => string;
 
-/** <image> placed to cover a box, keeping the labelled face (or the upper centre) in view. */
-function placed(photo: Photo | undefined, box: Box, url: UrlFor): string {
-  if (!photo) return "";
+/** Where a photo sits to cover a box (zoomed), keeping the focus point (an edit, else the
+ * labelled face, else the upper centre) as close to the middle as the edges allow. */
+export function placement(photo: Photo, box: Box, zoom = 1, focus?: [number, number]): Box {
   const ar = aspect(photo);
-  const [fx, fy] = label(photo).face ?? [0.5, 0.42];
+  const [fx, fy] = focus ?? label(photo).face ?? [0.5, 0.42];
   let w = box.w, h = box.w / ar;
   if (h < box.h) {
     h = box.h;
     w = h * ar;
   }
+  w *= zoom;
+  h *= zoom;
   const x = Math.min(box.x, Math.max(box.x + box.w - w, box.x + box.w / 2 - fx * w));
   const y = Math.min(box.y, Math.max(box.y + box.h - h, box.y + box.h / 2 - fy * h));
+  return { x, y, w, h };
+}
+
+/** <image> placed to cover a box (see `placement`). */
+function placed(photo: Photo | undefined, box: Box, url: UrlFor, zoom = 1, focus?: [number, number]): string {
+  if (!photo) return "";
+  const { x, y, w, h } = placement(photo, box, zoom, focus);
   return `<image href="${url(photo)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"/>`;
 }
+
 
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const uid = () => Math.random().toString(36).slice(2, 8);
@@ -449,7 +475,8 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
   for (const e of p.elements) {
     if (e.type === "photo") {
       const frame = e.frame ? `<rect x="${e.x - 1.5}" y="${e.y - 1.5}" width="${e.w + 3}" height="${e.h + 3}" fill="#fff"/>` : "";
-      parts.push(`${frame}<svg x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" viewBox="${e.x} ${e.y} ${e.w} ${e.h}" overflow="hidden" class="lay-photo${e.big ? " big" : ""}" data-photo="${e.id}" data-event="${p.event.id}">${placed(photos.get(e.id), e, url)}</svg>`);
+      const inner = `${frame}<svg x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" viewBox="${e.x} ${e.y} ${e.w} ${e.h}" overflow="hidden" class="lay-photo${e.big ? " big" : ""}" data-photo="${e.id}" data-event="${p.event.id}">${placed(photos.get(e.id), e, url, e.zoom, e.focus)}</svg>`;
+      parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     } else if (e.type === "month") {
       const size = Math.min(e.h * 1.25, (e.w / (0.85 * e.name.length)) * 1.25);
       const t = `<text x="${e.x + e.w / 2}" y="${e.y + e.h / 2 + size * 0.35}" text-anchor="middle" font-family="'League Spartan', sans-serif" font-weight="900" font-size="${size}" textLength="${e.w}" lengthAdjust="spacingAndGlyphs">${esc(e.name.toUpperCase())}</text>`;

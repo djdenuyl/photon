@@ -1,34 +1,46 @@
-// The book: one spread at a time (desktop) or one page at a time (phone), with a filmstrip.
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type TouchEvent } from "react";
+// This year's book: the generated layout with your picks and edits applied. Leaf through it
+// (spreads on desktop, pages on a phone) or switch on the editor.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { BookViewer, type Slide } from "@/components/BookViewer";
+import { EditorOverlay, EditorToolbar, itemsFor, PhotoPicker, type EditMode, type Item } from "@/components/Editor";
 import { PhotoSheet } from "@/components/PhotoSheet";
 import { useIsDesktop } from "@/components/Shell";
-import { displayUrl, thumbUrl, useStateMap, useYearData } from "@/lib/data";
-import { buildBooks, coverBack, coverFront, pageBody, renderPage, renderSpread, type Book, type UrlFor } from "@/lib/layout";
-import type { Photo, PlanEvent, Photos } from "@/lib/types";
+import { displayUrl, thumbUrl, useSaveState, useStateMap, useYearData } from "@/lib/data";
+import { applyEdits, parseEdits, serializeEdits, swapPhoto, updateElement, type Edits } from "@/lib/edits";
+import { buildBooks, coverBack, coverFront, PAGE, pageBody, renderPage, renderSpread, type Book, type Page } from "@/lib/layout";
+import type { Photo, Photos, PlanEvent } from "@/lib/types";
 
-interface Slide {
-  label: string;
-  title: string;
-  html: (url: UrlFor) => string;
+interface BookSlide extends Slide {
+  pages: { page: Page | null; dx: number }[];
+  width: number;
 }
 
-function slidesFor(book: Book, photos: Photos, perPage: boolean): Slide[] {
-  const body = (i: number) => (url: UrlFor) => (book.pages[i] ? pageBody(book.pages[i], photos, url) : null);
+function slidesFor(book: Book, photos: Photos, perPage: boolean): BookSlide[] {
+  const url = (big: boolean) => (big ? displayUrl : thumbUrl);
+  const body = (p: Page | null, big: boolean) => (p ? pageBody(p, photos, url(big)) : null);
   if (perPage) {
     return [
-      { label: "Achterkant", title: "Omslag", html: (url) => renderPage(coverBack(book.cover, photos, url)) },
-      { label: "Voorkant", title: "Omslag", html: (url) => renderPage(coverFront(book.cover, photos, url)) },
-      ...book.pages.map((p, i) => ({ label: `Pagina ${i + 1}`, title: p.event.title, html: (url: UrlFor) => renderPage(body(i)(url)) })),
+      { label: "Achterkant", title: "Omslag", aspect: 0.75, pages: [], width: PAGE.w, html: (big) => renderPage(coverBack(book.cover, photos, url(big))) },
+      { label: "Voorkant", title: "Omslag", aspect: 0.75, pages: [], width: PAGE.w, html: (big) => renderPage(coverFront(book.cover, photos, url(big))) },
+      ...book.pages.map((p, i) => ({
+        label: `Pagina ${i + 1}`, title: p.event.title, aspect: 0.75, pages: [{ page: p, dx: 0 }], width: PAGE.w,
+        html: (big: boolean) => renderPage(body(p, big)),
+      })),
     ];
   }
   return [
-    { label: "Omslag", title: "achterkant · voorkant", html: (url) => renderSpread(coverBack(book.cover, photos, url), coverFront(book.cover, photos, url)) },
+    {
+      label: "Omslag", title: "achterkant · voorkant", aspect: 1.5, pages: [], width: 2 * PAGE.w,
+      html: (big) => renderSpread(coverBack(book.cover, photos, url(big)), coverFront(book.cover, photos, url(big))),
+    },
     ...book.spreads.map((sp) => ({
       label: sp.label,
       title: [...new Set([sp.left, sp.right].filter((p) => p !== null).map((p) => p.event.title))].join(" · "),
-      html: (url: UrlFor) =>
-        renderSpread(sp.left ? pageBody(sp.left, photos, url) : null, sp.right ? pageBody(sp.right, photos, url) : null),
+      aspect: 1.5,
+      pages: [{ page: sp.left, dx: 0 }, { page: sp.right, dx: PAGE.w }],
+      width: 2 * PAGE.w,
+      html: (big: boolean) => renderSpread(body(sp.left, big), body(sp.right, big)),
     })),
   ];
 }
@@ -36,133 +48,220 @@ function slidesFor(book: Book, photos: Photos, perPage: boolean): Slide[] {
 export function BookPage() {
   const year = useYearData();
   const picks = useStateMap("picks").data;
+  const savePicks = useSaveState("picks");
+  const remoteEdits = useStateMap("edits").data;
+  const saveEdits = useSaveState("edits");
   const desktop = useIsDesktop();
   const [params, setParams] = useSearchParams();
   const bookIndex = params.get("deel") === "2" ? 1 : 0;
-  // phone: one page at a time by default; either view can be chosen
   const [choice, setChoice] = useState<boolean | null>(null);
   const perPage = choice ?? !desktop;
   const [open, setOpen] = useState<{ photo: Photo; event: PlanEvent | null } | null>(null);
 
-  const books = useMemo(() => (year.data ? buildBooks(year.data.plan, year.data.photos, picks ?? {}) : null), [year.data, picks]);
+  // editor state: local edits (until the server copy is replaced), undo/redo, live preview
+  const [editing, setEditing] = useState(false);
+  const [local, setLocal] = useState<Edits | null>(null);
+  const [past, setPast] = useState<Edits[]>([]);
+  const [future, setFuture] = useState<Edits[]>([]);
+  const [preview, setPreview] = useState<Edits | null>(null);
+  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [mode, setMode] = useState<EditMode>("move");
+  const [swapping, setSwapping] = useState<Item | null>(null);
+  const edits = local ?? parseEdits(remoteEdits);
+  const shown = preview ?? edits;
+
+  const books = useMemo(
+    () => (year.data ? applyEdits(buildBooks(year.data.plan, year.data.photos, picks ?? {}), shown) : null),
+    [year.data, picks, shown],
+  );
   const book = books?.[bookIndex];
   const slides = useMemo(() => (book && year.data ? slidesFor(book, year.data.photos, perPage) : []), [book, year.data, perPage]);
   const slide = Math.min(Number(params.get("s") ?? 0) || 0, Math.max(0, slides.length - 1));
   const go = (i: number, deel = bookIndex) => {
     const next = new URLSearchParams(params);
     next.set("deel", String(deel + 1));
-    next.set("s", String(Math.max(0, Math.min(i, slides.length - 1))));
+    next.set("s", String(Math.max(0, i)));
     setParams(next, { replace: true });
+    setSelection(new Set());
   };
 
+  const saveTimer = useRef<number | undefined>(undefined);
+  const commit = (next: Edits) => {
+    setPast((p) => [...p.slice(-99), edits]);
+    setFuture([]);
+    setLocal(next);
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => saveEdits.mutate(serializeEdits(next)), 700);
+  };
+  const undo = () => {
+    if (!past.length) return;
+    setFuture((f) => [edits, ...f]);
+    setPast((p) => p.slice(0, -1));
+    const prev = past[past.length - 1];
+    setLocal(prev);
+    saveEdits.mutate(serializeEdits(prev));
+  };
+  const redo = () => {
+    if (!future.length) return;
+    setPast((p) => [...p, edits]);
+    setFuture((f) => f.slice(1));
+    setLocal(future[0]);
+    saveEdits.mutate(serializeEdits(future[0]));
+  };
+
+  const current = slides[slide];
+  const items = current && editing ? itemsFor(current.pages) : [];
+  const selected = items.filter((i) => selection.has(i.sel));
+  const apply = (f: (i: Item) => Parameters<typeof updateElement>[3]) =>
+    commit(selected.reduce((acc, i) => updateElement(acc, i.key, i.slot, f(i)), edits));
+
   useEffect(() => {
+    if (!editing) return;
     const onKey = (e: KeyboardEvent) => {
-      if (open || (e.target as HTMLElement).closest("input, textarea, select")) return;
-      if (e.key === "ArrowRight") go(slide + 1);
-      if (e.key === "ArrowLeft") go(slide - 1);
+      if ((e.target as HTMLElement).closest("input, textarea, select, [role=dialog]")) return;
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (ctrl && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      } else if (e.key === "Escape") {
+        setSelection(new Set());
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selected.length) {
+        e.preventDefault();
+        apply(() => ({ hidden: true }));
+        setSelection(new Set());
+      } else if (e.key.startsWith("Arrow") && selected.length) {
+        e.preventDefault();
+        const step = e.shiftKey ? 5 : 1;
+        const [dx, dy] = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0];
+        apply((i) => ({ x: i.el.x + dx, y: i.el.y + dy }));
+      } else if (e.key.startsWith("Arrow") && !selected.length) {
+        if (e.key === "ArrowRight") go(slide + 1);
+        if (e.key === "ArrowLeft") go(slide - 1);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const touch = useRef<number | null>(null);
-  const onTouchStart = (e: TouchEvent) => (touch.current = e.touches[0].clientX);
-  const onTouchEnd = (e: TouchEvent) => {
-    if (touch.current === null) return;
-    const dx = e.changedTouches[0].clientX - touch.current;
-    touch.current = null;
-    if (Math.abs(dx) > 50) go(slide + (dx < 0 ? 1 : -1));
-  };
-  const onClick = (e: MouseEvent) => {
+  if (year.isPending) return <p className="p-6 text-muted">Boek laden…</p>;
+  if (!book || !year.data || !current) return <p className="p-6 text-muted">Geen gegevens gevonden.</p>;
+  const data = year.data;
+  const photosPlaced = book.pages.reduce((n, p) => n + p.elements.filter((e) => e.type === "photo").length, 0);
+  const placedIds = new Set(books!.flatMap((b) => b.pages.flatMap((p) => p.elements.flatMap((e) => (e.type === "photo" ? [e.id] : [])))));
+  const one = selected.length === 1 ? selected[0] : null;
+
+  const onStageClick = (e: React.MouseEvent) => {
+    if (editing) return;
     const el = (e.target as Element).closest<SVGElement>("[data-photo]");
     const id = el?.dataset.photo;
-    const photo = id ? year.data?.photos.get(id) : undefined;
+    const photo = id ? data.photos.get(id) : undefined;
     if (!photo) return;
-    const eventId = el?.dataset.event;
-    setOpen({ photo, event: year.data?.plan.events.find((ev) => ev.id === eventId) ?? null });
+    setOpen({ photo, event: data.plan.events.find((ev) => ev.id === el?.dataset.event) ?? null });
   };
 
-  if (year.isPending) return <p className="p-6 text-muted">Boek laden…</p>;
-  if (!book || !year.data) return <p className="p-6 text-muted">Geen gegevens gevonden.</p>;
-  const current = slides[slide];
-  const photosPlaced = book.pages.reduce((n, p) => n + p.elements.filter((e) => e.type === "photo").length, 0);
-
-  return (
-    <div className="mx-auto max-w-[1280px] px-3 pt-3 md:px-6 md:pt-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-full bg-surface p-1 ring-1 ring-hair">
-          {books!.map((b, i) => (
-            <button key={b.name} type="button" aria-pressed={i === bookIndex} onClick={() => go(0, i)}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium ${i === bookIndex ? "bg-ink text-page" : "text-ink-2"}`}>
-              {b.name} <span className="opacity-70">· {b.pages.length} p.</span>
-            </button>
-          ))}
-        </div>
-        <button type="button" onClick={() => go(slide - 1)} disabled={slide === 0} aria-label="Vorige" className="h-10 w-10 rounded-full border border-hair bg-surface text-lg disabled:opacity-40">←</button>
-        <select value={slide} onChange={(e) => go(Number(e.target.value))} aria-label="Ga naar"
-          className="h-10 min-w-0 flex-1 rounded-full border border-hair bg-surface px-3 text-sm md:max-w-md">
-          {slides.map((s, i) => (
-            <option key={i} value={i}>{s.label} — {s.title}</option>
-          ))}
-        </select>
-        <button type="button" onClick={() => go(slide + 1)} disabled={slide === slides.length - 1} aria-label="Volgende" className="h-10 w-10 rounded-full border border-hair bg-surface text-lg disabled:opacity-40">→</button>
-        <button type="button" onClick={() => { setChoice(!perPage); go(0); }}
-          className="h-10 rounded-full border border-hair bg-surface px-3 text-sm">
-          {perPage ? "Spreads" : "Pagina's"}
-        </button>
+  const toolbar = (
+    <>
+      <div className="flex rounded-full bg-surface p-1 ring-1 ring-hair">
+        {books!.map((b, i) => (
+          <button key={b.name} type="button" aria-pressed={i === bookIndex} onClick={() => go(0, i)}
+            className={`rounded-full px-3 py-1.5 text-sm font-medium ${i === bookIndex ? "bg-ink text-page" : "text-ink-2"}`}>
+            {b.name} <span className="opacity-70">· {b.pages.length} p.</span>
+          </button>
+        ))}
       </div>
-
-      <div
-        className="mx-auto mt-3"
-        style={{ maxWidth: perPage ? "min(100%, calc((100dvh - 15rem) * 0.75))" : "min(100%, calc((100dvh - 14rem) * 1.5))" }}
-        onClick={onClick}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        dangerouslySetInnerHTML={{ __html: current.html(displayUrl) }}
-      />
-      <p className="mt-2 text-center text-sm text-ink-2">{current.label} · {current.title}</p>
-
-      <Filmstrip slides={slides} active={slide} onPick={go} />
-      <p className="mt-2 pb-4 text-xs text-muted">
-        {book.pages.length} pagina's (Albelli Staand L: tot ongeveer 120) · {(photosPlaced / book.pages.length).toFixed(1).replace(".", ",")} foto's per pagina ·{" "}
-        {Object.keys(picks ?? {}).length} grote foto's door jou gekozen. Tik op een foto om hem als grote foto te kiezen; veeg of gebruik ← → om te bladeren.
-      </p>
-      {open && <PhotoSheet photo={open.photo} event={open.event} onClose={() => setOpen(null)} />}
-    </div>
+      <button type="button" onClick={() => { setChoice(!perPage); go(0); }} className="h-10 rounded-full border border-hair bg-surface px-3 text-sm">
+        {perPage ? "Spreads" : "Pagina's"}
+      </button>
+      <button type="button" onClick={() => { setEditing(!editing); setSelection(new Set()); }}
+        className={`h-10 rounded-full px-4 text-sm font-semibold ${editing ? "bg-accent text-white" : "border border-hair bg-surface"}`}>
+        {editing ? "Bewerken aan" : "Bewerken"}
+      </button>
+    </>
   );
-}
 
-function Filmstrip({ slides, active, onPick }: { slides: Slide[]; active: number; onPick: (i: number) => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState<Set<number>>(new Set());
-  useEffect(() => {
-    const root = ref.current;
-    if (!root) return;
-    const io = new IntersectionObserver(
-      (entries) =>
-        setVisible((prev) => {
-          const next = new Set(prev);
-          for (const en of entries) if (en.isIntersecting) next.add(Number((en.target as HTMLElement).dataset.i));
-          return next;
-        }),
-      { root, rootMargin: "0px 400px" },
-    );
-    root.querySelectorAll("[data-i]").forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, [slides]);
-  useEffect(() => {
-    ref.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest", inline: "center" });
-  }, [active]);
   return (
-    <div ref={ref} className="mt-3 flex gap-2 overflow-x-auto pb-2">
-      {slides.map((s, i) => (
-        <button key={i} type="button" data-i={i} onClick={() => onPick(i)}
-          className={`w-28 shrink-0 rounded-md border-2 p-0.5 text-left md:w-32 ${i === active ? "border-accent" : "border-transparent"}`}>
-          <div className="overflow-hidden rounded-sm bg-hair" style={{ aspectRatio: s.label.startsWith("Pagina") || s.title === "Omslag" ? "210 / 280" : "420 / 280" }}
-            dangerouslySetInnerHTML={{ __html: visible.has(i) ? s.html(thumbUrl) : "" }} />
-          <span className="mt-0.5 block truncate text-[11px] text-muted">{s.label}</span>
-        </button>
-      ))}
+    <div className="mx-auto max-w-[1280px] px-3 pt-3 md:px-6 md:pt-5">
+      <BookViewer
+        slides={slides}
+        index={slide}
+        onIndex={go}
+        toolbar={toolbar}
+        swipe={!editing}
+        onStageClick={onStageClick}
+        overlay={
+          editing && current.pages.length ? (
+            <EditorOverlay
+              items={items}
+              width={current.width}
+              photos={data.photos}
+              edits={edits}
+              selection={selection}
+              onSelect={setSelection}
+              mode={mode}
+              onPreview={setPreview}
+              onCommit={commit}
+            />
+          ) : null
+        }
+      />
+      {editing && (
+        current.pages.length ? (
+          <EditorToolbar
+            selected={selected}
+            mode={mode}
+            onMode={setMode}
+            apply={apply}
+            onSwap={() => one && setSwapping(one)}
+            onPick={() => {
+              if (!one) return;
+              const next = { ...(picks ?? {}) };
+              if (next[one.page.event.id] === one.el.id) delete next[one.page.event.id];
+              else next[one.page.event.id] = one.el.id;
+              savePicks.mutate(next);
+            }}
+            pickedHere={!!one && picks?.[one.page.event.id] === one.el.id}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={past.length > 0}
+            canRedo={future.length > 0}
+            onResetPages={() => {
+              const keys = current.pages.flatMap(({ page }) => (page ? [`${page.event.id}:${page.k}`] : []));
+              const next = { ...edits };
+              for (const k of keys) delete next[k];
+              commit(next);
+              setSelection(new Set());
+            }}
+            onDone={() => { setEditing(false); setSelection(new Set()); }}
+          />
+        ) : (
+          <p className="mt-3 text-center text-sm text-muted">Het omslag is nog niet te bewerken.</p>
+        )
+      )}
+      {!editing && (
+        <p className="mt-2 pb-4 text-xs text-muted">
+          {book.pages.length} pagina's (Albelli Staand L: tot ongeveer 120) · {(photosPlaced / book.pages.length).toFixed(1).replace(".", ",")} foto's per pagina ·{" "}
+          {Object.keys(picks ?? {}).length} grote foto's gekozen · {Object.keys(edits).length} pagina's bewerkt. Tik op een foto om hem als grote foto te kiezen.
+        </p>
+      )}
+      {open && <PhotoSheet photo={open.photo} event={open.event} onClose={() => setOpen(null)} />}
+      {swapping && data.photos.get(swapping.el.id) && (
+        <PhotoPicker
+          current={data.photos.get(swapping.el.id)!}
+          event={swapping.page.event}
+          photos={data.photos}
+          events={data.plan.events}
+          placed={placedIds}
+          onPick={(id) => {
+            commit(swapPhoto(books!, edits, swapping.key, swapping.slot, swapping.el.id, id));
+            setSwapping(null);
+          }}
+          onClose={() => setSwapping(null)}
+        />
+      )}
     </div>
   );
 }

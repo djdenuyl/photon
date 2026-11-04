@@ -8,7 +8,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse, Response
 
-from photon.api import auth, data, state
+from photon.api import auth, data, state, years
 from photon.settings import get_settings
 
 
@@ -41,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(data.router)
     app.include_router(state.router)
+    app.include_router(years.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction] — registered via decorator

@@ -1,6 +1,7 @@
-"""Editable state per year: answers to the open questions and the chosen big photos.
+"""Editable state per year: answers to the open questions, the chosen big photos and the
+editor's changes per page.
 
-Both are small string maps, stored as one Firestore document each
+Each is a small string map (edits: page key -> JSON), stored as one Firestore document
 (`state/{year}-{kind}`); a PUT replaces the whole map.
 """
 
@@ -13,7 +14,7 @@ from photon.api.auth import User
 
 router = APIRouter(prefix="/api/state", tags=["state"])
 
-Kind = Literal["answers", "picks"]
+Kind = Literal["answers", "picks", "edits"]
 
 
 @router.get("/{year}/{kind}")

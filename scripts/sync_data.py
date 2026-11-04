@@ -1,7 +1,7 @@
 """Upload the data the app reads to the private bucket, under gs://<bucket>/data/.
 
     uv run python scripts/sync_data.py            # json + thumbnails + display photos
-    uv run python scripts/sync_data.py --seed     # also copy local answers/picks to Firestore (once)
+    uv run python scripts/sync_data.py --seed     # also copy local answers/picks to Firestore
 
 Only what the app shows is uploaded (no originals, raw exports or renders). Uses gcloud under
 PHOTON_GCLOUD_CONFIG, like deploy.py. Seeding goes through the Firestore REST API with that

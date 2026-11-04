@@ -2,13 +2,14 @@ import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persist
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import type { ReactNode } from "react";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { DesktopHeader, MobileHeader, TabBar, useIsDesktop } from "@/components/Shell";
 import { ApiError, fetchJson, type Me } from "@/lib/api";
-import { BookPage } from "@/pages/BookPage";
+import { YEAR } from "@/lib/data";
 import { GuidePage } from "@/pages/GuidePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PlanPage } from "@/pages/PlanPage";
+import { YearPage } from "@/pages/YearPage";
 
 // The query cache is persisted so the app paints at once from the last known data.
 const CACHE_MAX_AGE = 7 * 24 * 3_600_000;
@@ -37,10 +38,11 @@ function Layout({ me }: { me: Me }) {
       {desktop ? <DesktopHeader me={me} /> : <MobileHeader me={me} />}
       <main key={pathname} className={desktop ? "" : "pb-20"}>
         <Routes>
-          <Route path="/" element={<BookPage />} />
+          <Route path="/" element={<Navigate to={`/boek/${YEAR}`} replace />} />
+          <Route path="/boek/:year" element={<YearPage />} />
           <Route path="/indeling" element={<PlanPage />} />
           <Route path="/gids" element={<GuidePage />} />
-          <Route path="*" element={<BookPage />} />
+          <Route path="*" element={<Navigate to={`/boek/${YEAR}`} replace />} />
         </Routes>
       </main>
       {!desktop && <TabBar />}

@@ -26,8 +26,10 @@ request. Everything except `/api/health` and the login routes needs a session, `
 
 - `state/{year}-answers` — answers to the open questions (`{data: {questionId: text}}`).
 - `state/{year}-picks` — the big photo chosen per event (`{data: {eventId: photoId}}`).
+- `state/{year}-edits` — editor changes per page (`{data: {"eventId:k": json}}`, see below).
+- `years/{year}` — years started with "+ Nieuw jaar" (`GET/POST /api/years`).
 
-Both are small maps replaced as a whole (`PUT /api/state/{year}/{kind}`); the client updates its
+The state maps are small maps replaced as a whole (`PUT /api/state/{year}/{kind}`); the client updates its
 cache first, so the book re-lays out at once.
 
 ## The book (`lib/layout.ts`)
@@ -53,3 +55,22 @@ Pure function from the plan, the photos (with labels and colour tones) and the p
 
 The phone shows one page at a time (swipe or ← →), desktop one spread; the big view uses the
 1600 px display photos, the filmstrip the thumbnails.
+
+## Editor (`lib/edits.ts`, `components/Editor.tsx`)
+
+Edits sit on top of the generated layout, so a re-run of the layout keeps them. They are keyed by
+page (`eventId:k`, k = the page within its event) and slot (the photo the layout put there):
+`{photo?, x?, y?, w?, h?, zoom?, focus?, rot?, hidden?}`. `applyEdits` applies them after `buildBooks`.
+A swap with a photo already in the book trades the two places.
+
+- Select: click (shift adds), or drag a band on empty space. Drag moves the selection; corner handles
+  resize; "Foto" mode pans the photo inside its frame (focus point). Zoom 1–4×, rotate ±3°.
+- Keys: arrows nudge 1 mm (shift 5), Delete hides, Esc deselects, ctrl+Z / ctrl+Y.
+- "Wissel" opens a picker: search, scope (event/month/year), people, close-up, sfeerbeeld.
+- Not editable yet: the cover, backgrounds/panoramas, captions and month titles.
+
+## Years (`/boek/:year`)
+
+This year is laid out by Photon and editable; 2020–2024 are the Albelli exports drawn read-only by
+`lib/albelli.ts` (halves of a spread on a phone); a year created with "+" shows the pipeline steps.
+Theme: light/dark via `data-theme` on `<html>` and CSS variables (`index.css`), stored in localStorage.

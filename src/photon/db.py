@@ -1,6 +1,6 @@
 """Typed Firestore access layer. All Firestore reads/writes go through this module.
 
-Layout: `state/{year}-{kind}` with `{data: {key: value}, updated_by, updated_at}`.
+Layout: `state/{year}-{kind}` with `{data: {key: value}, updated_by, updated_at}`; `years/{year}`.
 
 google-cloud-firestore is not fully typed, so unknown-type diagnostics are
 relaxed here (and only here); the public surface of this module is fully typed.
@@ -16,6 +16,7 @@ from google.cloud import firestore
 from photon.settings import get_settings
 
 STATE = "state"
+YEARS = "years"
 
 
 @lru_cache
@@ -40,3 +41,11 @@ def save_state(year: int, kind: str, data: dict[str, str], email: str) -> None:
     _ref(year, kind).set(
         {"data": data, "updated_by": email, "updated_at": datetime.now(UTC).isoformat()}
     )
+
+
+def list_years() -> list[dict[str, Any]]:
+    return [snap.to_dict() or {} for snap in client().collection(YEARS).stream()]
+
+
+def save_year(year: dict[str, Any]) -> None:
+    client().collection(YEARS).document(str(year["year"])).set(year)
