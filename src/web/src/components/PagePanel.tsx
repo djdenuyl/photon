@@ -4,6 +4,7 @@
 import type { ReactNode } from "react";
 import type { Mesh } from "@/lib/mesh";
 import { ColorChoice } from "./Editor";
+import { Panel } from "./Panel";
 
 export interface PageActions {
   onColor: (c: string) => void;
@@ -43,6 +44,7 @@ export function PagePanel({
   hasBgPhoto,
   mesh,
   meshPoints,
+  sides,
   a,
 }: {
   title: string;
@@ -51,18 +53,22 @@ export function PagePanel({
   hasBgPhoto: boolean;
   mesh: Mesh | undefined;
   meshPoints: boolean;
+  /** In a spread: which page this is, and switching to the other one. */
+  sides?: { current: "left" | "right"; pick: (side: "left" | "right") => void };
   a: PageActions;
 }) {
   return (
-    <aside data-keep-selection aria-label="Pagina"
-      className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8.5rem)] z-40 max-h-[45dvh] overflow-y-auto rounded-2xl border border-hair bg-surface text-ink shadow-xl md:inset-x-auto md:top-24 md:right-4 md:bottom-auto md:max-h-[calc(100dvh-8rem)] md:w-80">
-      <div className="flex items-center gap-2 px-4 pt-3">
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold">Pagina</div>
-          <div className="truncate text-xs text-muted">{title}</div>
+    <Panel title="Pagina" subtitle={title} onClose={a.onClose}>
+      {sides && (
+        <div className="flex gap-1 px-4 pt-3" role="group" aria-label="Welke pagina">
+          {(["left", "right"] as const).map((side) => (
+            <button key={side} type="button" aria-pressed={sides.current === side} onClick={() => sides.pick(side)}
+              className={`flex-1 rounded-lg border px-2 py-1 text-sm ${sides.current === side ? "border-ink bg-ink text-page" : "border-hair hover:bg-page"}`}>
+              {side === "left" ? "Linkerpagina" : "Rechterpagina"}
+            </button>
+          ))}
         </div>
-        <button type="button" onClick={a.onClose} aria-label="Sluiten" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-page">✕</button>
-      </div>
+      )}
       <Section title="Achtergrondkleur">
         <ColorChoice value={color} tones={tones} onChange={a.onColor} />
       </Section>
@@ -113,6 +119,6 @@ export function PagePanel({
           </div>
         )}
       </Section>
-    </aside>
+    </Panel>
   );
 }

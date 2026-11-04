@@ -73,7 +73,10 @@ const GEOMETRY = ["x", "y", "w", "h", "zoom", "rot"] as const;
 export const allPages = (book: Book): Page[] => [book.covers.back, book.covers.front, ...book.pages];
 
 const B = PAGE.bleed;
-export const FULL_PAGE: Pt[] = [[-B, -B], [PAGE.w + B, -B], [PAGE.w + B, PAGE.h + B], [-B, PAGE.h + B]];
+/** The whole page; points on its edge are drawn on into the bleed (see pageBody). */
+export const FULL_PAGE: Pt[] = [[0, 0], [PAGE.w, 0], [PAGE.w, PAGE.h], [0, PAGE.h]];
+// the page's own colour keeps its points on the page (older edits had them in the bleed)
+const onPage = (pts: Pt[]): Pt[] => pts.map(([x, y]) => [Math.min(PAGE.w, Math.max(0, x)), Math.min(PAGE.h, Math.max(0, y))]);
 
 function fill(slot: string, color: string, pts: Pt[], z: number): FillElement {
   return { type: "fill", slot, color, pts, z, ...bboxOf(pts) };
@@ -141,7 +144,10 @@ function applyPage(page: Page, pe: PageEdits | undefined): void {
     } else if (e.type === "fill") {
       const o = { ...e, z };
       if (ed?.color) o.color = ed.color;
-      if (ed?.pts && ed.pts.length >= 3) Object.assign(o, { pts: ed.pts }, bboxOf(ed.pts));
+      if (ed?.pts && ed.pts.length >= 3) {
+        const pts = slot === "pagefill" ? onPage(ed.pts) : ed.pts;
+        Object.assign(o, { pts }, bboxOf(pts));
+      }
       out.push(o);
     } else {
       out.push(captionWith({ ...e, z }, ed));

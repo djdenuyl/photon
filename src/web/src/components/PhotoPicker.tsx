@@ -1,6 +1,6 @@
 // Swap: pick a photo by people, close-up, scenery, event or month, or search.
 import { useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { Panel } from "./Panel";
 import { thumbUrl } from "@/lib/data";
 import type { Photo, Photos, PlanEvent } from "@/lib/types";
 
@@ -64,18 +64,10 @@ export function PhotoPicker({
   }, [photos, eventOf, current, event, bookEvents, people, company, closeup, scenic, unused, placed, scope, query]);
 
   const chip = (on: boolean) => `rounded-full border px-3 py-1 text-xs ${on ? "border-ink bg-ink text-page" : "border-hair bg-page text-ink-2"}`;
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-end md:items-stretch" role="dialog" aria-modal="true" aria-label="Wissel foto">
-      <button type="button" aria-label="Sluiten" onClick={onClose} className="absolute inset-0 bg-black/30" />
-      <div className="relative flex max-h-[85dvh] w-full flex-col rounded-t-3xl bg-surface md:max-h-none md:w-[440px] md:rounded-none md:border-l md:border-hair">
-        <div className="flex items-center gap-3 border-b border-hair p-4">
-          {current && <img src={thumbUrl(current)} alt="" className="h-12 w-12 rounded object-cover" />}
-          <div className="min-w-0 flex-1">
-            <div className="font-semibold">Wissel foto</div>
-            <div className="truncate text-xs text-muted">{current && <span className="font-mono">{current.id} · </span>}{event.title}</div>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-hair px-3 py-1.5 text-sm">Sluiten</button>
-        </div>
+  return (
+    <Panel title={current ? "Andere foto kiezen" : "Foto kiezen"} onClose={onClose}
+      lead={current && <img src={thumbUrl(current)} alt="" className="h-10 w-10 rounded object-cover" />}
+      subtitle={<>{current && <span className="font-mono">{current.id} · </span>}{event.title}</>}>
         <div className="space-y-2 border-b border-hair p-4">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Zoek op gebeurtenis of foto-nummer…"
             className="w-full rounded-lg border border-hair bg-page px-3 py-2 text-sm" />
@@ -100,7 +92,7 @@ export function PhotoPicker({
             <button type="button" className={chip(unused)} onClick={() => setUnused(!unused)}>nog niet in het boek</button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="p-3">
           <p className="mb-2 text-xs text-muted">{results.length} foto's · staat een foto al in het boek, dan ruilen ze van plek</p>
           <div className="grid grid-cols-3 gap-1.5 md:grid-cols-3">
             {results.map((p) => (
@@ -112,8 +104,6 @@ export function PhotoPicker({
             ))}
           </div>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Panel>
   );
 }

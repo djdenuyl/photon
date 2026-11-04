@@ -569,7 +569,9 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
   const parts = [`<rect x="-5" y="-5" width="${PAGE.w + 10}" height="${PAGE.h + 10}" fill="${p.background ?? "#fff"}"/>`];
   for (const e of p.elements) {
     if (e.type === "fill") {
-      parts.push(`<polygon points="${e.pts.map((q) => q.join(",")).join(" ")}" fill="${e.color}"/>`);
+      // a point on the page's edge is drawn on into the bleed, so the colour reaches the cut
+      const B = PAGE.bleed, out = (v: number, max: number) => (v <= 0.01 ? -B : v >= max - 0.01 ? max + B : v);
+      parts.push(`<polygon points="${e.pts.map(([x, y]) => `${out(x, PAGE.w)},${out(y, PAGE.h)}`).join(" ")}" fill="${e.color}"/>`);
     } else if (e.type === "photo" && e.shape) {
       const { clip, under, over } = shapeParts({ ...e, shape: e.shape });
       const cid = `${id}c${parts.length}`;

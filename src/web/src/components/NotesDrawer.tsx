@@ -1,7 +1,7 @@
 // The notes drawer: every note in this book, open ones first; add one for the selection or the
 // visible page, write it, say who it's for (yourself or the agent), tick it off, or jump to it.
 import { useState } from "react";
-import { createPortal } from "react-dom";
+import { Panel } from "./Panel";
 import type { Note, Notes } from "@/lib/notes";
 
 export interface NoteTarget {
@@ -75,16 +75,8 @@ export function NotesDrawer({
     .sort((a, b) => (a.n.status === b.n.status ? b.n.created.localeCompare(a.n.created) : a.n.status === "open" ? -1 : 1));
   const open = mine.filter((x) => x.n.status === "open");
   const shown = showDone ? mine : open;
-  return createPortal(
-    <aside data-keep-selection aria-label="Notities"
-      className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8.5rem)] z-40 flex max-h-[55dvh] flex-col rounded-2xl border border-hair bg-surface text-ink shadow-xl md:inset-x-auto md:top-24 md:right-4 md:bottom-auto md:max-h-[calc(100dvh-8rem)] md:w-96">
-      <div className="flex items-center gap-2 border-b border-hair px-4 py-3">
-        <div className="flex-1">
-          <div className="font-semibold">Notities</div>
-          <div className="text-xs text-muted">{open.length} open · voor jezelf of voor de agent</div>
-        </div>
-        <button type="button" onClick={onClose} aria-label="Sluiten" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-page">✕</button>
-      </div>
+  return (
+    <Panel title="Notities" subtitle={`${open.length} open · voor jezelf of voor de agent`} onClose={onClose}>
       <div className="flex items-center gap-2 px-4 py-2">
         <button type="button" onClick={onAdd} disabled={!target} className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-page disabled:opacity-40">
           + Notitie{target ? ` bij ${target.label}` : ""}
@@ -94,13 +86,12 @@ export function NotesDrawer({
           Toon afgehandeld
         </label>
       </div>
-      <ul className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
+      <ul className="space-y-2 px-4 pb-4">
         {shown.length === 0 && <li className="py-6 text-center text-sm text-muted">Nog geen notities. Selecteer iets, of laat de selectie leeg voor de hele pagina.</li>}
         {shown.map(({ id, n, label }) => (
           <NoteCard key={id + n.status + n.to} id={id} note={n} label={label} focus={id === fresh} onSave={(note) => onSave(id, note)} onJump={() => onJump(n)} />
         ))}
       </ul>
-    </aside>,
-    document.body,
+    </Panel>
   );
 }

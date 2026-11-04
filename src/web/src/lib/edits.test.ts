@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { year } from "@/test/fixtures";
 import { applyEdits, findPhoto, pageKey, parseEdits, serializeEdits, swapPhoto, updateElement, type Edits } from "./edits";
-import { buildBooks, type Element, type Page } from "./layout";
+import { buildBooks, pageBody, type Element, type Page } from "./layout";
 import { makeMesh } from "./mesh";
 
 const { plan, photos } = year();
@@ -68,6 +68,20 @@ describe("applyEdits", () => {
     const tri: [number, number][] = [[0, 0], [210, 0], [0, 280]];
     const out = applyEdits(fresh(), updateElement({}, pageKey(page), "pagefill", { pts: tri, color: "#ff0000" }))[0].pages[0];
     expect(out.elements[0]).toMatchObject({ type: "fill", color: "#ff0000", pts: tri, w: 210, h: 280 });
+  });
+});
+
+describe("the page's own colour", () => {
+  it("keeps its points on the page (handles stay on the page), even from older edits in the bleed", () => {
+    const page = fresh()[0].pages[0];
+    const old: [number, number][] = [[-4.5, -4.5], [214.5, -4.5], [214.5, 284.5], [-4.5, 284.5]];
+    const out = applyEdits(fresh(), updateElement({}, pageKey(page), "pagefill", { pts: old }))[0].pages[0];
+    expect(out.elements[0]).toMatchObject({ x: 0, y: 0, w: 210, h: 280 });
+  });
+
+  it("is still drawn into the bleed where its points are on the edge", () => {
+    const out = applyEdits(fresh(), {})[0].pages[0];
+    expect(pageBody(out, photos, (p) => p.thumb)).toContain('points="-4.5,-4.5 214.5,-4.5 214.5,284.5 -4.5,284.5"');
   });
 });
 

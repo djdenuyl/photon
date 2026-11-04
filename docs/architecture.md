@@ -105,9 +105,16 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   incl. bleed); more can be added (`add: "fill"`). A selected area shows its points (drag; click +
   Delete removes one, down to a triangle) and the middles of its sides (drag moves the side along
   its normal; double-click adds a point). Edits store the points (`pts`).
-- The page itself: a click on an empty spot selects it and opens the page menu (`PagePanel`, right
-  on desktop, bottom on a phone): colour, shape, "+ Kleurvlak", background photo (choose one:
-  `add: "photo"`), and the advanced layouts.
+- The page itself: a click on an empty spot, or the page button in the bar below the book, selects
+  it and opens the page menu (`PagePanel`; in a spread it switches between the left and right
+  page): colour, shape, "+ Kleurvlak", background photo (`add: "photo"`), notes, layouts. The
+  page colour's points stay on the page; points on its edge are drawn on into the bleed.
+- One side panel (`Panel`) for the photo picker, the page menu and the notes, one at a time:
+  a card on the right on desktop, a sheet above the bottom bar on a phone; it doesn't block the
+  book. On a phone the selection's toolbar replaces the bottom bar (one scrolling row, ✕ to
+  deselect, its menus as a sheet); on desktop it floats next to the selection.
+- The selection's handles are drawn in their own layer above every element, so a photo drawn
+  later can't catch a click meant for a handle.
 - Layouts as a mesh (`lib/mesh.ts`, edit slot `mesh` = `{mesh, cells}`): points shared by photo
   cells; each cell is drawn inset by half the gap, so gaps stay even when points move. Templates:
   Raster (rows within the margins), Schuin (rows with shaken points, full bleed, like 2022 p. 32–33)

@@ -443,32 +443,6 @@ export function EditorOverlay({
                 !
               </span>
             )}
-            {on && single && !bg && i.kind !== "shape" &&
-              ["nw", "ne", "sw", "se", "n", "s", "e", "w"].map((c) => (
-                <span
-                  key={c}
-                  data-handle={c}
-                  className={`absolute border-2 border-white bg-accent shadow ${c.length === 2 ? "h-3.5 w-3.5 rounded-full" : c === "n" || c === "s" ? "h-2.5 w-6 rounded-full" : "h-6 w-2.5 rounded-full"}`}
-                  style={{
-                    left: c.includes("w") ? (c.length === 2 ? -7 : -5) : c === "n" || c === "s" ? "calc(50% - 12px)" : undefined,
-                    right: c.includes("e") ? (c.length === 2 ? -7 : -5) : undefined,
-                    top: c.includes("n") ? (c.length === 2 ? -7 : -5) : c === "e" || c === "w" ? "calc(50% - 12px)" : undefined,
-                    bottom: c.includes("s") ? (c.length === 2 ? -7 : -5) : undefined,
-                    cursor: { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" }[c],
-                  }}
-                />
-              ))}
-            {on && single && photoOf(i) && (
-              <span
-                data-handle="pan"
-                title="Sleep om de foto binnen het kader te verschuiven"
-                className="pointer-events-auto absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white/90 bg-white/25 text-white shadow-md backdrop-blur-[2px] active:cursor-grabbing"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" />
-                </svg>
-              </span>
-            )}
           </div>
         );
       })}
@@ -489,13 +463,13 @@ export function EditorOverlay({
             const r = poly.el.type === "fill" ? poly.el.pts[(k + 1) % poly.el.pts.length] : q;
             return (
               <span key={`e${k}`} data-edge={k} title="Sleep om deze zijde te verschuiven; dubbelklik voor een extra punt"
-                className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-move rounded-sm border-2 border-white bg-accent/70 shadow"
+                className="absolute z-[7] h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-move rounded-sm border-2 border-white bg-accent/70 shadow"
                 style={{ left: pct(poly.dx + (q[0] + r[0]) / 2, width), top: pct((q[1] + r[1]) / 2, PAGE.h) }} />
             );
           })}
           {poly.el.pts.map((q, k) => (
             <span key={`v${k}`} data-vert={k} title="Sleep dit punt; klik en Delete om het te verwijderen"
-              className={`absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 shadow ${vertex?.index === k && vertex.sel === poly.sel ? "border-accent bg-white" : "border-white bg-accent"}`}
+              className={`absolute z-[7] h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 shadow ${vertex?.index === k && vertex.sel === poly.sel ? "border-accent bg-white" : "border-white bg-accent"}`}
               style={{ left: pct(poly.dx + q[0], width), top: pct(q[1], PAGE.h) }} />
           ))}
         </>
@@ -507,6 +481,43 @@ export function EditorOverlay({
             style={{ left: pct(mesh.dx + Math.min(Math.max(q[0], -2), PAGE.w + 2), width), top: pct(Math.min(Math.max(q[1], -2), PAGE.h + 2), PAGE.h) }} />
         ) : null,
       )}
+      {single && (() => {
+        // the selection's handles, on top of everything (a photo drawn later must not catch them)
+        const i = chosen[0];
+        const locked = i.kind === "bg" || i.kind === "page" || byOutline(i);
+        const rot = rotOf(i);
+        return (
+          <div data-sel={i.sel} className="pointer-events-none absolute z-[6]"
+            style={{ left: pct(i.dx + i.box.x, width), top: pct(i.box.y, PAGE.h), width: pct(i.box.w, width), height: pct(i.box.h, PAGE.h), transform: rot ? `rotate(${rot}deg)` : undefined }}>
+            {!locked && i.kind !== "shape" &&
+              ["nw", "ne", "sw", "se", "n", "s", "e", "w"].map((c) => (
+                <span
+                  key={c}
+                  data-handle={c}
+                  className={`pointer-events-auto absolute border-2 border-white bg-accent shadow ${c.length === 2 ? "h-3.5 w-3.5 rounded-full" : c === "n" || c === "s" ? "h-2.5 w-6 rounded-full" : "h-6 w-2.5 rounded-full"}`}
+                  style={{
+                    left: c.includes("w") ? (c.length === 2 ? -7 : -5) : c === "n" || c === "s" ? "calc(50% - 12px)" : undefined,
+                    right: c.includes("e") ? (c.length === 2 ? -7 : -5) : undefined,
+                    top: c.includes("n") ? (c.length === 2 ? -7 : -5) : c === "e" || c === "w" ? "calc(50% - 12px)" : undefined,
+                    bottom: c.includes("s") ? (c.length === 2 ? -7 : -5) : undefined,
+                    cursor: { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" }[c],
+                  }}
+                />
+              ))}
+            {photoOf(i) && (
+              <span
+                data-handle="pan"
+                title="Sleep om de foto binnen het kader te verschuiven"
+                className="pointer-events-auto absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white/90 bg-white/25 text-white shadow-md backdrop-blur-[2px] active:cursor-grabbing"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" />
+                </svg>
+              </span>
+            )}
+          </div>
+        );
+      })()}
       {items.filter((i) => noted.has(i.sel) || (i.kind === "page" && noted.has(i.key))).map((i) => {
         const page = i.kind === "page";
         return (
@@ -559,6 +570,7 @@ const ICONS: Record<string, ReactNode> = {
   front: <><rect x="3" y="3" width="12" height="12" rx="1.5" /><rect x="9" y="9" width="12" height="12" rx="1.5" fill="currentColor" /></>,
   back: <><rect x="9" y="9" width="12" height="12" rx="1.5" /><rect x="3" y="3" width="12" height="12" rx="1.5" fill="currentColor" /></>,
   reset: <><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
+  page: <><rect x="4" y="3" width="16" height="18" rx="1.5" /><path d="M4 15l5-5 4 4 2-2 5 5" /></>,
   note: <><path d="M5 3h10l4 4v14H5z" /><path d="M14 3v5h5M8.5 12h7M8.5 16h5" /></>,
   trash: <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />,
   undo: <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />,
@@ -731,7 +743,7 @@ function VeilSlider({ value, onCommit }: { value: number; onCommit: (v: number) 
 }
 
 /** Floats next to the selection; what it offers depends on what is selected. */
-export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions }) {
+export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; a: BarActions; dock?: boolean }) {
   const [menu, setMenu] = useState<"border" | "color" | null>(null);
   const one = selected.length === 1 ? selected[0] : null;
   const kinds = new Set(selected.map((i) => i.kind));
@@ -747,7 +759,7 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
   const colour = caption ? (caption.color ?? "#fff") : fillEl?.color;
   const pictured = every("photo", "shape", "bg", "month", "cell");
   return (
-    <div className="relative flex flex-wrap items-center justify-center gap-0.5 rounded-xl border border-hair bg-surface p-1 text-ink shadow-lg md:flex-nowrap">
+    <div className={dock ? "flex items-center gap-0.5" : "relative flex flex-nowrap items-center justify-center gap-0.5 rounded-xl border border-hair bg-surface p-1 text-ink shadow-lg"}>
       {!one && <span className="px-1.5 text-xs whitespace-nowrap text-muted">{selected.length} geselecteerd</span>}
       {one && photoOf(one) && <span className="px-1.5 font-mono text-xs text-muted select-all" title="Fotonummer">{photoOf(one)}</span>}
       {caption && (
@@ -814,7 +826,7 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
       <IconBtn icon="reset" label="Terug naar het voorstel" onClick={() => a.apply(() => null)} />
       {!every("shape", "cell") && <IconBtn icon="trash" danger label="Verwijderen (Delete)" onClick={() => a.apply(() => ({ hidden: true }))} />}
       {menu === "border" && framed && (
-        <div className="absolute top-full right-0 z-20 mt-1.5 w-40 rounded-xl border border-hair bg-surface p-1 shadow-lg">
+        <div className={dock ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8.5rem)] z-40 rounded-2xl border border-hair bg-surface p-3 shadow-xl" : "absolute top-full right-0 z-20 mt-1.5 w-40 rounded-xl border border-hair bg-surface p-1 shadow-lg"}>
           {BORDERS.map((b) => (
             <button key={b.label} type="button" onClick={() => { a.apply(() => ({ border: b.border })); setMenu(null); }}
               className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-page">
@@ -825,7 +837,7 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
         </div>
       )}
       {menu === "color" && colour !== undefined && (
-        <div className="absolute top-full left-0 z-20 mt-1.5 w-64 rounded-xl border border-hair bg-surface p-3 shadow-lg">
+        <div className={dock ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8.5rem)] z-40 rounded-2xl border border-hair bg-surface p-3 shadow-xl" : "absolute top-full left-0 z-20 mt-1.5 w-64 rounded-xl border border-hair bg-surface p-3 shadow-lg"}>
           <ColorChoice value={colour} tones={a.tones} auto={!!caption} onChange={(color) => a.apply(() => ({ color }))} />
         </div>
       )}
@@ -842,6 +854,7 @@ export function EditBar({
   snap,
   onSnap,
   onAddText,
+  onPage,
   saving,
   onResetPages,
   notes,
@@ -854,6 +867,7 @@ export function EditBar({
   snap: boolean;
   onSnap: (on: boolean) => void;
   onAddText: () => void;
+  onPage: () => void;
   saving: SaveStatus;
   onResetPages: () => void;
   /** Open notes in this book. */
@@ -866,6 +880,7 @@ export function EditBar({
       <IconBtn icon="redo" label="Opnieuw (ctrl+Y)" onClick={onRedo} disabled={!canRedo} />
       <Sep />
       <IconBtn icon="magnet" label={snap ? "Snappen staat aan (Alt = even uit)" : "Snappen staat uit"} active={snap} onClick={() => onSnap(!snap)} />
+      <IconBtn icon="page" label="Pagina bewerken (achtergrond, vorm, indeling)" onClick={onPage} />
       <IconBtn icon="addText" label="Tekst toevoegen" onClick={onAddText} />
       <IconBtn icon="resetPage" label="Alle wijzigingen op deze pagina's terugdraaien" onClick={onResetPages} />
       <span className="relative">

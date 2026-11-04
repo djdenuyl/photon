@@ -275,7 +275,7 @@ export function BookPage() {
     const id = newNoteId();
     saveNote(id, newNote(t.page, t.slot));
     setFreshNote(id);
-    setNotesOpen(true);
+    openPanel("notes");
   };
   const jumpTo = (n: Note) => {
     const i = slides.findIndex((s) => s.pages.some(({ page }) => page && `${page.event.id}:${page.k}` === n.page));
@@ -284,12 +284,35 @@ export function BookPage() {
   };
   const openNotes = Object.values(notes).filter((n) => n.status === "open");
   const noted = new Set(openNotes.map((n) => (n.slot ? `${n.page}|${n.slot}` : n.page)));
+  // one side panel at a time: the photo picker, the page menu or the notes
+  const openPanel = (which: "swap" | "notes" | null, item?: Item) => {
+    setSwapping(which === "swap" && item ? item : null);
+    setAddingBg(null);
+    setNotesOpen(which === "notes");
+  };
+  // "Pagina bewerken": the visible page (the left one of a spread, if there is one)
+  const selectPage = (side?: "left" | "right") => {
+    const pages = items.filter((i) => i.kind === "page");
+    const pick = side === "right" ? pages.find((i) => i.dx > 0) ?? pages[0] : side === "left" ? pages.find((i) => i.dx === 0) ?? pages[0] : pages[0];
+    if (pick) setSelection(new Set([pick.sel]));
+    openPanel(null);
+  };
   const togglePick = () => {
     if (!one || one.el.type !== "photo") return;
     const next = { ...(picks ?? {}) };
     if (next[one.page.event.id] === one.el.id) delete next[one.page.event.id];
     else next[one.page.event.id] = one.el.id;
     savePicks.mutate(next);
+  };
+  const barActions = {
+    apply,
+    onSwap: () => one && openPanel("swap", one),
+    onPick: togglePick,
+    pickedHere: !!one && one.el.type === "photo" && picks?.[one.page.event.id] === one.el.id,
+    onFront: toFront,
+    onBack: toBack,
+    tones,
+    onNote: () => addNote(),
   };
   const addText = () => {
     const target = current ? [...current.pages].reverse().find((p) => p.page) : undefined;
@@ -303,7 +326,7 @@ export function BookPage() {
   useEffect(() => {
     if (!editing) return;
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input, textarea, select, [role=dialog]")) return;
+      if ((e.target as HTMLElement).closest("input, textarea, select, [role=dialog], aside")) return;
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key.toLowerCase() === "z") {
         e.preventDefault();
@@ -440,28 +463,22 @@ export function BookPage() {
               })()}
               noted={noted}
               onNotes={() => setNotesOpen(true)}
-              bar={pageItem ? null : (
-                <SelectionBar
-                  selected={selected}
-                  a={{
-                    apply,
-                    onSwap: () => one && setSwapping(one),
-                    onPick: togglePick,
-                    pickedHere: !!one && one.el.type === "photo" && picks?.[one.page.event.id] === one.el.id,
-                    onFront: toFront,
-                    onBack: toBack,
-                    tones,
-                    onNote: () => addNote(),
-                  }}
-                />
-              )}
+              bar={pageItem || !desktop ? null : <SelectionBar selected={selected} a={barActions} />}
               onPreview={setPreview}
               onCommit={commit}
             />
           ) : null
         }
       />
-      {editing ? (
+      {editing && !desktop && selected.length > 0 && !pageItem ? (
+        <div data-keep-selection className="sticky bottom-[calc(env(safe-area-inset-bottom)+4rem)] z-20 mt-3 flex items-center gap-1 rounded-2xl border border-hair bg-surface p-1 text-ink shadow-lg">
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <SelectionBar dock selected={selected} a={barActions} />
+          </div>
+          <button type="button" onClick={() => setSelection(new Set())} aria-label="Selectie opheffen"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-l border-hair">✕</button>
+        </div>
+      ) : editing ? (
         <EditBar
           onUndo={undo}
           onRedo={redo}
@@ -470,9 +487,10 @@ export function BookPage() {
           snap={snap}
           onSnap={setSnap}
           onAddText={addText}
+          onPage={() => selectPage()}
           saving={saving}
           notes={openNotes.filter((n) => labelOf(n) !== null).length}
-          onNotes={() => setNotesOpen(!notesOpen)}
+          onNotes={() => openPanel(notesOpen ? null : "notes")}
           onResetPages={() => {
             const keys = current.pages.flatMap(({ page }) => (page ? [`${page.event.id}:${page.k}`] : []));
             const next = { ...edits };
@@ -487,7 +505,7 @@ export function BookPage() {
           {Object.keys(picks ?? {}).length} grote foto's gekozen · {Object.keys(edits).length} pagina's bewerkt. Tik op een foto om hem groot te bekijken.
         </p>
       )}
-      {editing && !notesOpen && pageItem && pageItem.el.type === "fill" && (
+      {editing && !notesOpen && !swapping && !addingBg && pageItem && pageItem.el.type === "fill" && (
         <PagePanel
           title={pageItem.page.cover ? pageItem.page.event.title : `${pageItem.page.event.title}${pageItem.page.k ? ` · pagina ${pageItem.page.k + 1}` : ""}`}
           color={pageItem.el.color}
@@ -495,6 +513,7 @@ export function BookPage() {
           hasBgPhoto={pageItem.page.elements.some((e) => e.type === "photo" && e.bg)}
           mesh={meshOf(pageItem.key)}
           meshPoints={meshPoints === pageItem.key}
+          sides={current.pages.filter(({ page }) => page).length === 2 ? { current: pageItem.dx > 0 ? "right" : "left", pick: selectPage } : undefined}
           a={{
             onColor: (color) => commit(updateElement(edits, pageItem.key, "pagefill", { color, hidden: undefined })),
             onFullShape: () => commit(updateElement(edits, pageItem.key, "pagefill", { pts: undefined, hidden: undefined })),
@@ -506,7 +525,10 @@ export function BookPage() {
             onBgPhoto: () => {
               const bg = items.find((i) => i.kind === "bg" && i.key === pageItem.key);
               if (bg) setSelection(new Set([bg.sel]));
-              else setAddingBg(pageItem.page);
+              else {
+                openPanel(null);
+                setAddingBg(pageItem.page);
+              }
             },
             onTemplate: (t) => setMesh(pageItem.page, pageItem.key, t),
             onGap: (gap) => {
