@@ -26,7 +26,7 @@ interface Editable {
   z?: number;
 }
 /** A photo clipped to a shape instead of its rectangle (the cover letters and shards). */
-export type Shape = { kind: "letter"; ch: string } | { kind: "poly"; pts: [number, number][]; tint: string };
+export type Shape = { kind: "letter"; ch: string } | { kind: "poly"; pts: [number, number][]; tint?: string };
 export interface Border { w: number; color: string }
 export interface PhotoElement extends Box, Editable {
   type: "photo";
@@ -37,6 +37,8 @@ export interface PhotoElement extends Box, Editable {
   frame?: boolean;
   border?: Border | null;
   shape?: Shape;
+  /** A cell of a mesh layout (its index): shaped by the mesh, not moved on its own. */
+  cell?: number;
   /** Editor: zoom inside the frame (1 = just covering it). */
   zoom?: number;
   /** Editor: focus point (fractions of the photo) kept in the middle of the frame. */
@@ -59,6 +61,15 @@ export interface CaptionElement extends Box, Editable {
   color?: string;
   font?: "donuts";
   align?: "left" | "center" | "right";
+  /** With color "auto": the colour picked for what lies under the text (set by the editor). */
+  autoColor?: string;
+}
+/** A flat colour area (the page background is one, slot "pagefill"); points in mm on the page,
+ * its box their bounding box. */
+export interface FillElement extends Box, Editable {
+  type: "fill";
+  color: string;
+  pts: [number, number][];
 }
 
 export const CAPTION_SIZE = 3.53;
@@ -71,7 +82,7 @@ export function captionFrame(text: string, x: number, baseline: number, size = C
   const h = size * LINE + size * 0.2;
   return { x: end ? x - w : x, y: baseline - size * 0.95, w, h };
 }
-export type Element = PhotoElement | MonthElement | CaptionElement;
+export type Element = PhotoElement | MonthElement | CaptionElement | FillElement;
 
 export interface Page {
   event: PlanEvent;
@@ -527,15 +538,18 @@ function shapeParts(e: PhotoElement & { shape: Shape }): { clip: string; under: 
     return { clip: glyph(""), under: glyph('fill="#000"', 1.3 * k, 1.5 * k), over: "" };
   }
   const pts = e.shape.pts.map(([u, v]) => `${e.x + u * e.w},${e.y + v * e.h}`).join(" ");
-  return { clip: `<polygon points="${pts}"/>`, under: "", over: `<polygon points="${pts}" fill="${e.shape.tint}" opacity=".2"/>` };
+  return { clip: `<polygon points="${pts}"/>`, under: "", over: e.shape.tint ? `<polygon points="${pts}" fill="${e.shape.tint}" opacity=".2"/>` : "" };
 }
 
 /** The inside of one page (210 × 280 user units, clipped by the caller). */
 export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
   const id = `pg${uid()}`;
+  // white paper; the page colour is a "pagefill" element once the edits are applied
   const parts = [`<rect x="-5" y="-5" width="${PAGE.w + 10}" height="${PAGE.h + 10}" fill="${p.background ?? "#fff"}"/>`];
   for (const e of p.elements) {
-    if (e.type === "photo" && e.shape) {
+    if (e.type === "fill") {
+      parts.push(`<polygon points="${e.pts.map((q) => q.join(",")).join(" ")}" fill="${e.color}"/>`);
+    } else if (e.type === "photo" && e.shape) {
       const { clip, under, over } = shapeParts({ ...e, shape: e.shape });
       const cid = `${id}c${parts.length}`;
       const inner = `${under}<clipPath id="${cid}">${clip}</clipPath><g clip-path="url(#${cid})" class="lay-photo" data-photo="${e.id}">${placed(photos.get(e.id), e, url, e.zoom, e.focus)}${over}</g>`;
@@ -551,7 +565,7 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
       const cid = `${id}m${parts.length}`;
       parts.push(`<clipPath id="${cid}">${t}</clipPath><g clip-path="url(#${cid})">${placed(photos.get(e.photo ?? ""), e, url, e.zoom, e.focus)}</g>`);
     } else {
-      const size = e.size ?? CAPTION_SIZE, color = e.color ?? "#fff";
+      const size = e.size ?? CAPTION_SIZE, color = e.color === "auto" ? (e.autoColor ?? "#fff") : (e.color ?? "#fff");
       const font = e.font === "donuts" ? DONUTS : "'Open Sans', sans-serif";
       const halo = e.font ? "" : `text-shadow:0 0 ${size * 0.25}px ${color === "#fff" ? "rgba(0,0,0,.45)" : "rgba(255,255,255,.45)"};`;
       const style = `margin:0;width:100%;height:100%;overflow:hidden;font-family:${font};font-size:${size}px;line-height:${LINE};color:${color};text-align:${e.align ?? "left"};white-space:pre-wrap;overflow-wrap:break-word;${halo}`;

@@ -1,0 +1,114 @@
+// The page menu, shown when the page itself is selected (a click on an empty spot): its colour
+// and the shape of that colour area, extra colour areas, the background photo, and the advanced
+// layouts (a mesh of photo cells: Raster, Schuin, Honingraat) whose points can be dragged.
+import type { ReactNode } from "react";
+import type { Mesh } from "@/lib/mesh";
+import { ColorChoice } from "./Editor";
+
+export interface PageActions {
+  onColor: (c: string) => void;
+  onFullShape: () => void;
+  onAddFill: () => void;
+  onBgPhoto: () => void;
+  onTemplate: (t: Mesh["template"] | null) => void;
+  onGap: (gap: number) => void;
+  onBleed: (bleed: boolean) => void;
+  onShuffle: () => void;
+  onMeshPoints: (on: boolean) => void;
+  onClose: () => void;
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="border-t border-hair px-4 py-3 first:border-t-0">
+      <h3 className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+const btn = (on = false) => `rounded-lg border px-2.5 py-1.5 text-sm ${on ? "border-ink bg-ink text-page" : "border-hair hover:bg-page"}`;
+
+const TEMPLATES: { id: Mesh["template"]; label: string; hint: string; icon: ReactNode }[] = [
+  { id: "raster", label: "Raster", hint: "Rijen binnen de marges; sleep de punten voor schuine lijnen", icon: <path d="M3 3h18v18H3zM3 10h18M3 16h18M10 3v7M14 10v6M8 16v5" /> },
+  { id: "schuin", label: "Schuin", hint: "Gebroken vlakken tot in de afloop (zoals 2022, blz. 32–33)", icon: <path d="M3 3h18v18H3zM3 9l9-2 9 4M3 15l7 1 11-3M12 7l-2 9M15 12l2 9" /> },
+  { id: "honingraat", label: "Honingraat", hint: "Zeshoeken tot in de afloop (zoals 2022, blz. 3)", icon: <path d="M7 3l4 0 2 4-2 4H7L5 7zM13 11h4l2 4-2 4h-4l-2-4zM7 11l-2 4 2 4" /> },
+];
+
+export function PagePanel({
+  title,
+  color,
+  tones,
+  hasBgPhoto,
+  mesh,
+  meshPoints,
+  a,
+}: {
+  title: string;
+  color: string;
+  tones: string[];
+  hasBgPhoto: boolean;
+  mesh: Mesh | undefined;
+  meshPoints: boolean;
+  a: PageActions;
+}) {
+  return (
+    <aside data-keep-selection aria-label="Pagina"
+      className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8.5rem)] z-40 max-h-[45dvh] overflow-y-auto rounded-2xl border border-hair bg-surface text-ink shadow-xl md:inset-x-auto md:top-24 md:right-4 md:bottom-auto md:max-h-[calc(100dvh-8rem)] md:w-80">
+      <div className="flex items-center gap-2 px-4 pt-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">Pagina</div>
+          <div className="truncate text-xs text-muted">{title}</div>
+        </div>
+        <button type="button" onClick={a.onClose} aria-label="Sluiten" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-page">✕</button>
+      </div>
+      <Section title="Achtergrondkleur">
+        <ColorChoice value={color} tones={tones} onChange={a.onColor} />
+      </Section>
+      <Section title="Vorm">
+        <p className="mb-2 text-xs text-ink-2">
+          Sleep de punten op de pagina voor een andere vorm, of de zijden om ze te verschuiven. Dubbelklik op een zijde voor een extra punt; klik een punt en druk Delete om het te verwijderen.
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          <button type="button" className={btn()} onClick={a.onFullShape}>Hele pagina</button>
+          <button type="button" className={btn()} onClick={a.onAddFill}>+ Kleurvlak</button>
+        </div>
+      </Section>
+      <Section title="Achtergrondfoto">
+        <button type="button" className={btn()} onClick={a.onBgPhoto}>{hasBgPhoto ? "Achtergrondfoto bewerken" : "Achtergrondfoto kiezen"}</button>
+      </Section>
+      <Section title="Indeling (geavanceerd)">
+        <p className="mb-2 text-xs text-ink-2">Foto's als vlakken met gedeelde punten: sleep een punt en alle foto's eromheen bewegen mee, de witte voeg blijft even breed.</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {TEMPLATES.map((t) => (
+            <button key={t.id} type="button" title={t.hint} onClick={() => a.onTemplate(t.id)}
+              className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-xs ${mesh?.template === t.id ? "border-ink bg-ink text-page" : "border-hair hover:bg-page"}`}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true">{t.icon}</svg>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {mesh && (
+          <div className="mt-3 space-y-2">
+            <button type="button" className={`${btn(meshPoints)} w-full`} onClick={() => a.onMeshPoints(!meshPoints)}>
+              {meshPoints ? "Klaar met punten verschuiven" : "Punten verschuiven"}
+            </button>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="w-16 shrink-0 text-ink-2">Voeg</span>
+              <input type="range" min={0} max={10} step={0.5} value={mesh.gap} onChange={(e) => a.onGap(Number(e.target.value))} className="flex-1" />
+              <span className="w-12 text-right tabular-nums">{mesh.gap} mm</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={mesh.bleed} onChange={(e) => a.onBleed(e.target.checked)} />
+              Tot in de afloop (geen marge)
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {mesh.template === "schuin" && <button type="button" className={btn()} onClick={a.onShuffle}>Opnieuw schudden</button>}
+              <button type="button" className={btn()} onClick={() => a.onTemplate(null)}>Terug naar het voorstel</button>
+            </div>
+          </div>
+        )}
+      </Section>
+    </aside>
+  );
+}

@@ -5,7 +5,8 @@
 // fixed name for cover parts ("letter3", "shard0", "background", "label"), "month" for the month
 // title and "cap0", "cap1"… for captions. So edits survive a re-layout as long as the event keeps
 // its pages. Stored per page as JSON strings in the `edits` state map.
-import { CAPTION_SIZE, captionFrame, type Book, type Border, type Box, type CaptionElement, type Element, type Page } from "./layout";
+import { CAPTION_SIZE, captionFrame, PAGE, type Book, type Border, type Box, type CaptionElement, type Element, type FillElement, type Page, type PhotoElement } from "./layout";
+import { bboxOf, cellPolygons, type Mesh, type Pt } from "./mesh";
 import type { StringMap } from "./types";
 
 export interface ElementEdit {
@@ -26,8 +27,13 @@ export interface ElementEdit {
   size?: number;
   color?: string;
   align?: "left" | "center" | "right";
-  /** A caption added in the editor (not from the layout). */
-  add?: "caption";
+  /** An element added in the editor (not from the layout). */
+  add?: "caption" | "fill" | "photo";
+  /** Fills: their corner points (mm). */
+  pts?: Pt[];
+  /** Slot "mesh": the page laid out as a mesh of photo cells, and the photo per cell. */
+  mesh?: Mesh;
+  cells?: string[];
   /** Caption geometry is a text frame (x/y/w/h). Caption edits from before text frames lack it:
    * their x/y were the text's left (right for the cover label) and baseline − 1.7 × size. */
   box?: true;
@@ -64,38 +70,81 @@ const GEOMETRY = ["x", "y", "w", "h", "zoom", "rot"] as const;
 /** Every page of a book, the cover included. */
 export const allPages = (book: Book): Page[] => [book.covers.back, book.covers.front, ...book.pages];
 
-function applyPage(page: Page, pe: PageEdits | undefined): void {
+const B = PAGE.bleed;
+export const FULL_PAGE: Pt[] = [[-B, -B], [PAGE.w + B, -B], [PAGE.w + B, PAGE.h + B], [-B, PAGE.h + B]];
+
+function fill(slot: string, color: string, pts: Pt[], z: number): FillElement {
+  return { type: "fill", slot, color, pts, z, ...bboxOf(pts) };
+}
+
+/** The page's elements before edits: the page colour as a fill at the very bottom, the layout's
+ * elements (or, with a mesh, its cells instead of the plain photos), then what the editor added. */
+function baseElements(page: Page, pe: PageEdits | undefined): Element[] {
   let caps = 0;
+  const out: Element[] = [
+    fill("pagefill", page.background ?? "#fff", FULL_PAGE, -1),
+    ...page.elements.map((e, i): Element => ({ ...e, z: e.z ?? i, slot: e.slot ?? (e.type === "photo" ? e.id : e.type === "month" ? "month" : `cap${caps++}`) })),
+  ];
+  const meshEdit = pe?.mesh;
+  let base = out;
+  if (meshEdit?.mesh) {
+    base = out.filter((e) => !(e.type === "photo" && !e.bg && !e.shape));
+    cellPolygons(meshEdit.mesh).forEach((poly, i) => {
+      const box = bboxOf(poly);
+      const cell: PhotoElement = {
+        type: "photo", id: meshEdit.cells?.[i] ?? "", slot: `cell${i}`, cell: i, z: 0.5 + i / 1000, ...box,
+        shape: { kind: "poly", pts: poly.map(([x, y]): Pt => [(x - box.x) / box.w, (y - box.y) / box.h]) },
+      };
+      base.push(cell);
+    });
+  }
+  for (const [slot, ed] of Object.entries(pe ?? {})) {
+    if (ed.add === "caption") {
+      const text = ed.text ?? "Tekst";
+      base.push({ type: "caption", slot, z: 1000, text, ...captionFrame(text, 20, 20 + 1.7 * CAPTION_SIZE) });
+    } else if (ed.add === "photo") {
+      // a background photo chosen in the page menu
+      base.push({ type: "photo", id: ed.photo ?? "", slot, bg: true, x: -B, y: -B, w: PAGE.w + 2 * B, h: PAGE.h + 2 * B, z: 0.1 });
+    } else if (ed.add === "fill") {
+      base.push(fill(slot, "#f2c94c", [[60, 80], [150, 80], [150, 200], [60, 200]], 0.25));
+    }
+  }
+  return base;
+}
+
+function applyPage(page: Page, pe: PageEdits | undefined): void {
   const out: Element[] = [];
-  page.elements.forEach((e, i) => {
-    const slot = e.slot ?? (e.type === "photo" ? e.id : e.type === "month" ? "month" : `cap${caps++}`);
+  for (const e of baseElements(page, pe)) {
+    const slot = e.slot!;
     const ed = pe?.[slot];
-    if (ed?.hidden) return;
-    const z = ed?.z ?? i;
+    if (ed?.hidden) continue;
+    const z = ed?.z ?? e.z;
     if (e.type === "photo") {
-      const o = { ...e, slot, z };
+      const o = { ...e, z };
       if (ed?.photo !== undefined) o.id = ed.photo;
-      for (const k of GEOMETRY) if (ed?.[k] !== undefined) o[k] = ed[k];
+      // a mesh cell keeps its shape: only zoom (and focus, photo) apply
+      const keys = e.cell === undefined ? GEOMETRY : (["zoom"] as const);
+      for (const k of keys) if (ed?.[k] !== undefined) o[k] = ed[k];
       if (ed?.focus) o.focus = ed.focus;
       if (ed?.border !== undefined) o.border = ed.border;
       out.push(o);
     } else if (e.type === "month") {
-      const o = { ...e, slot, z };
+      const o = { ...e, z };
       if (ed?.photo !== undefined) o.photo = ed.photo;
       if (ed?.text !== undefined) o.name = ed.text;
       for (const k of ["x", "y", "w", "h", "zoom"] as const) if (ed?.[k] !== undefined) o[k] = ed[k];
       if (ed?.focus) o.focus = ed.focus;
       out.push(o);
+    } else if (e.type === "fill") {
+      const o = { ...e, z };
+      if (ed?.color) o.color = ed.color;
+      if (ed?.pts && ed.pts.length >= 3) Object.assign(o, { pts: ed.pts }, bboxOf(ed.pts));
+      out.push(o);
     } else {
-      out.push(captionWith({ ...e, slot, z }, ed));
+      out.push(captionWith({ ...e, z }, ed));
     }
-  });
-  for (const [slot, ed] of Object.entries(pe ?? {})) {
-    if (ed.add !== "caption" || ed.hidden) continue;
-    const text = ed.text ?? "Tekst";
-    const base: CaptionElement = { type: "caption", slot, z: ed.z ?? 1000, text, ...captionFrame(text, 20, 20 + 1.7 * CAPTION_SIZE) };
-    out.push(captionWith(base, ed));
   }
+  page.background = undefined;
   page.elements = out.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
 }
 

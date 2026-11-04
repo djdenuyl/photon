@@ -1,15 +1,19 @@
-// The editor on top of a rendered spread: select (click, shift-click, drag a box; double-click the
-// background), move (several at once, snapping to guides), resize with the corner handles, move a
-// photo inside its frame with the see-through centre handle, and a toolbar that floats next to the
-// selection. Changes are previewed live and committed on release.
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
+// The editor on top of a rendered spread: select (click, shift-click, drag a box; a click on an
+// empty spot selects the page, a double-click its background photo), move (several at once,
+// snapping to guides), resize with the corner handles, move a photo inside its frame with the
+// see-through centre handle, drag the points and sides of colour areas, drag the points of a mesh
+// layout, and a toolbar that floats next to the selection. Changes are previewed live and
+// committed on release.
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { updateElement, type ElementEdit, type Edits } from "@/lib/edits";
 import { PAGE, placement, type Box, type Element, type Page } from "@/lib/layout";
+import { pointInPolygon, type Mesh, type Pt } from "@/lib/mesh";
 import type { SaveStatus } from "@/lib/saver";
 import type { Photos } from "@/lib/types";
 
-/** photo: a framed photo; bg: a page background (locked in place); shape: a cover letter or shard. */
-export type Kind = "photo" | "bg" | "shape" | "month" | "caption";
+/** photo: a framed photo; bg: a page background photo (locked in place); shape: a cover letter or
+ * shard; cell: a photo in a mesh layout; fill: a colour area; page: the page's own colour area. */
+export type Kind = "photo" | "bg" | "shape" | "cell" | "month" | "caption" | "fill" | "page";
 
 export interface Item {
   sel: string;
@@ -39,12 +43,34 @@ export function itemsFor(pages: { page: Page | null; dx: number }[]): Item[] {
     (page?.elements ?? []).map((el): Item => {
       const key = pageKey(page!);
       const slot = el.slot ?? "";
-      const kind: Kind = el.type === "photo" ? (el.bg ? "bg" : el.shape ? "shape" : "photo") : el.type;
+      const kind: Kind =
+        el.type === "photo" ? (el.bg ? "bg" : el.cell !== undefined ? "cell" : el.shape ? "shape" : "photo")
+        : el.type === "fill" ? (el.slot === "pagefill" ? "page" : "fill")
+        : el.type;
       const box = { x: el.x, y: el.y, w: el.w, h: el.h };
       return { sel: `${key}|${slot}`, key, slot, el, kind, box, dx, page: page! };
     }),
   );
 }
+
+/** The edit that moves an item (null: it doesn't move on its own). */
+export function moveBy(i: Item, dx: number, dy: number): ElementEdit | null {
+  const el = i.el;
+  if (i.kind === "bg" || i.kind === "cell" || i.kind === "page") return null;
+  if (el.type === "fill") return { pts: el.pts.map(([x, y]): Pt => [x + dx, y + dy]) };
+  return withFrame(i, { x: el.x + dx, y: el.y + dy });
+}
+
+/** An item's outline on its page, when it isn't a plain rectangle. */
+function polygonOf(i: Item): Pt[] | null {
+  const el = i.el;
+  if (el.type === "fill") return el.pts;
+  if (el.type === "photo" && el.shape?.kind === "poly") return el.shape.pts.map(([u, v]): Pt => [el.x + u * el.w, el.y + v * el.h]);
+  return null;
+}
+
+/** Items picked by their outline rather than their box (they would overlap): mesh cells and colour areas. */
+const byOutline = (i: Item) => i.kind === "cell" || i.kind === "fill";
 
 /** The photo shown in an item (photos, cover parts, month titles). */
 export function photoOf(i: Item): string | null {
@@ -84,6 +110,8 @@ function snap1(values: number[], lines: number[]): { d: number; at: number } | n
 
 type Drag =
   | { mode: "move"; x: number; y: number; targets: Item[]; sel: string; base: Edits; moved: boolean }
+  | { mode: "vert" | "edge"; x: number; y: number; target: Item; index: number; base: Edits; moved: boolean }
+  | { mode: "mesh"; x: number; y: number; key: string; mesh: Mesh; index: number; base: Edits; moved: boolean }
   | { mode: "pan"; x: number; y: number; target: Item; base: Edits; moved: boolean }
   | { mode: "resize"; x: number; y: number; target: Item; corner: string; base: Edits; moved: boolean }
   | { mode: "band"; x: number; y: number; moved: boolean; additive: boolean };
@@ -97,6 +125,7 @@ export function EditorOverlay({
   onSelect,
   snap,
   bar,
+  mesh,
   onPreview,
   onCommit,
 }: {
@@ -109,6 +138,8 @@ export function EditorOverlay({
   snap: boolean;
   /** The toolbar for the selection, shown above (or below) it. */
   bar: ReactNode;
+  /** A mesh layout whose points are being moved (the page's key and offset). */
+  mesh: { key: string; dx: number; mesh: Mesh } | null;
   onPreview: (e: Edits | null) => void;
   onCommit: (e: Edits) => void;
 }) {
@@ -134,11 +165,31 @@ export function EditorOverlay({
     if (over.join() !== overflow.join()) setOverflow(over);
   }, [items, overflow]);
 
+  // a point of a colour area, picked to delete it (Delete / Backspace)
+  const [vertex, setVertex] = useState<{ sel: string; index: number } | null>(null);
+  useEffect(() => {
+    if (!vertex) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if ((e.target as HTMLElement).closest("input, textarea")) return;
+      const i = items.find((it) => it.sel === vertex.sel);
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (i?.el.type === "fill" && i.el.pts.length > 3) {
+        onCommit(updateElement(edits, i.key, i.slot, { pts: i.el.pts.filter((_, k) => k !== vertex.index) }));
+      }
+      setVertex(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [vertex, items, edits, onCommit]);
+
   const toMm = (e: { clientX: number; clientY: number }) => {
     const r = root.current!.getBoundingClientRect();
     return { x: ((e.clientX - r.left) / r.width) * width, y: ((e.clientY - r.top) / r.height) * PAGE.h };
   };
   const byId = new Map(items.map((i) => [i.sel, i]));
+  const chosen = items.filter((i) => selection.has(i.sel));
 
   const down = (e: ReactPointerEvent) => {
     if (e.button !== 0) return;
@@ -146,8 +197,27 @@ export function EditorOverlay({
     const t = e.target as HTMLElement;
     const handle = t.closest<HTMLElement>("[data-handle]");
     const hit = t.closest<HTMLElement>("[data-sel]");
-    const target = hit ? byId.get(hit.dataset.sel!) : undefined;
     root.current!.setPointerCapture(e.pointerId);
+    const vert = t.closest<HTMLElement>("[data-vert], [data-edge]");
+    if (vert && chosen.length === 1) {
+      const isVert = vert.dataset.vert !== undefined;
+      drag.current = { mode: isVert ? "vert" : "edge", ...p, target: chosen[0], index: Number(isVert ? vert.dataset.vert : vert.dataset.edge), base: edits, moved: false };
+      return;
+    }
+    const mv = t.closest<HTMLElement>("[data-mvert]");
+    if (mv && mesh) {
+      drag.current = { mode: "mesh", ...p, key: mesh.key, mesh: mesh.mesh, index: Number(mv.dataset.mvert), base: edits, moved: false };
+      return;
+    }
+    setVertex(null);
+    // boxes first; mesh cells and colour areas by their outline, the topmost one
+    const target = (hit ? byId.get(hit.dataset.sel!) : undefined)
+      ?? [...items].reverse().find((i) => byOutline(i) && pointInPolygon(p.x - i.dx, p.y, polygonOf(i) ?? []));
+    if (target?.kind === "cell" && !e.shiftKey) {
+      onSelect(new Set([target.sel]));
+      drag.current = { mode: "pan", ...p, target, base: edits, moved: false };
+      return;
+    }
     if (target) {
       lines.current = snapLines(items, selection.has(target.sel) ? selection : new Set([target.sel]), width);
       if (handle?.dataset.handle === "pan") {
@@ -166,7 +236,7 @@ export function EditorOverlay({
         onSelect(next);
         return;
       }
-      const group = selection.has(sel) ? items.filter((i) => selection.has(i.sel) && i.kind !== "bg") : [target];
+      const group = (selection.has(sel) ? items.filter((i) => selection.has(i.sel)) : [target]).filter((i) => moveBy(i, 0, 0));
       if (!selection.has(sel)) onSelect(new Set([sel]));
       drag.current = { mode: "move", ...p, targets: group, sel, base: edits, moved: false };
       return;
@@ -205,12 +275,30 @@ export function EditorOverlay({
         take(snap1([x0, x1, (x0 + x1) / 2], lines.current.x), "x");
         take(snap1([y0, y1, (y0 + y1) / 2], lines.current.y), "y");
       }
-      next = d.targets.reduce((acc, t) => updateElement(acc, t.key, t.slot, withFrame(t, { x: t.el.x + dx, y: t.el.y + dy })), d.base);
+      next = d.targets.reduce((acc, t) => updateElement(acc, t.key, t.slot, moveBy(t, dx, dy) ?? {}), d.base);
+    } else if (d.mode === "vert" || d.mode === "edge") {
+      const el = d.target.el;
+      if (el.type !== "fill") return;
+      const pts = el.pts.map((q): Pt => [q[0], q[1]]);
+      if (d.mode === "vert") {
+        pts[d.index] = [pts[d.index][0] + dx, pts[d.index][1] + dy];
+      } else {
+        // a side moves straight out or in, both its points along its normal
+        const a = pts[d.index], b = pts[(d.index + 1) % pts.length];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        const n: Pt = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
+        const k = dx * n[0] + dy * n[1];
+        for (const j of [d.index, (d.index + 1) % pts.length]) pts[j] = [pts[j][0] + n[0] * k, pts[j][1] + n[1] * k];
+      }
+      next = updateElement(d.base, d.target.key, d.target.slot, { pts });
+    } else if (d.mode === "mesh") {
+      const verts = d.mesh.verts.map((q, k): Pt => (k === d.index ? [q[0] + dx, q[1] + dy] : q));
+      next = updateElement(d.base, d.key, "mesh", { mesh: { ...d.mesh, verts } });
     } else if (d.mode === "pan") {
       const { el } = d.target;
       const id = photoOf(d.target);
       const photo = id ? photos.get(id) : undefined;
-      if (!photo || el.type === "caption") return;
+      if (!photo || (el.type !== "photo" && el.type !== "month")) return;
       const img = placement(photo, el, el.zoom ?? 1, el.focus);
       // the focus point that puts the current view in the middle, moved against the drag
       const fx0 = (el.x + el.w / 2 - img.x) / img.w, fy0 = (el.y + el.h / 2 - img.y) / img.h;
@@ -254,12 +342,18 @@ export function EditorOverlay({
       if (band) {
         const [x0, x1] = [Math.min(band.x0, band.x1), Math.max(band.x0, band.x1)];
         const [y0, y1] = [Math.min(band.y0, band.y1), Math.max(band.y0, band.y1)];
-        const hits = items.filter((i) => i.kind !== "bg" && i.dx + i.box.x < x1 && i.dx + i.box.x + i.box.w > x0 && i.box.y < y1 && i.box.y + i.box.h > y0);
+        const hits = items.filter((i) => i.kind !== "bg" && i.kind !== "page" && i.dx + i.box.x < x1 && i.dx + i.box.x + i.box.w > x0 && i.box.y < y1 && i.box.y + i.box.h > y0);
         onSelect(new Set([...(d.additive ? selection : []), ...hits.map((i) => i.sel)]));
+      }
+      else if (!d.moved) {
+        // a click on an empty spot selects the page itself
+        const page = items.find((i) => i.kind === "page" && d.x >= i.dx && d.x < i.dx + PAGE.w);
+        if (page) onSelect(new Set([page.sel]));
       }
       setBand(null);
       return;
     }
+    if (d.mode === "vert" && !d.moved) setVertex({ sel: d.target.sel, index: d.index });
     // a plain click on one element of a group selects just that one
     if (d.mode === "move" && !d.moved && selection.size > 1) onSelect(new Set([d.sel]));
     if (d.moved && preview.current) onCommit(preview.current);
@@ -267,8 +361,17 @@ export function EditorOverlay({
     onPreview(null);
   };
 
-  // double-click on a page's background (where no photo is) selects the background
+  // double-click on a side of a colour area adds a point there; on a page's background (where no
+  // photo is) it selects the background photo
   const dbl = (e: React.MouseEvent) => {
+    const edge = (e.target as HTMLElement).closest<HTMLElement>("[data-edge]");
+    const it = chosen[0];
+    if (edge && it?.el.type === "fill") {
+      const k = Number(edge.dataset.edge), pts = it.el.pts;
+      const a = pts[k], b = pts[(k + 1) % pts.length];
+      onCommit(updateElement(edits, it.key, it.slot, { pts: [...pts.slice(0, k + 1), [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ...pts.slice(k + 1)] }));
+      return;
+    }
     const hit = (e.target as HTMLElement).closest<HTMLElement>("[data-sel]");
     if (hit && byId.get(hit.dataset.sel!)?.kind !== "bg") return;
     const p = toMm(e);
@@ -277,10 +380,10 @@ export function EditorOverlay({
   };
 
   const pct = (v: number, of: number) => `${(v / of) * 100}%`;
-  const chosen = items.filter((i) => selection.has(i.sel));
   const single = chosen.length === 1;
+  const poly = !mesh && single && (chosen[0].kind === "fill" || chosen[0].kind === "page") && chosen[0].el.type === "fill" ? chosen[0] : null;
   let barStyle: CSSProperties | null = null;
-  if (chosen.length && !busy && !band) {
+  if (chosen.length && bar && !busy && !band) {
     const x0 = Math.max(0, Math.min(...chosen.map((i) => i.dx + i.box.x)));
     const x1 = Math.min(width, Math.max(...chosen.map((i) => i.dx + i.box.x + i.box.w)));
     const y0 = Math.max(0, Math.min(...chosen.map((i) => i.box.y)));
@@ -307,22 +410,23 @@ export function EditorOverlay({
     >
       {items.map((i) => {
         const on = selection.has(i.sel);
-        const bg = i.kind === "bg";
+        // backgrounds, the page, cells and colour areas take no pointer events (picked by outline or click)
+        const bg = i.kind === "bg" || i.kind === "page" || byOutline(i);
         const tooMuch = overflow.includes(i.sel);
-        if (bg && !on) return null;
+        if ((i.kind === "bg" || i.kind === "page" || i.kind === "fill") && !on) return null;
         const rot = rotOf(i);
         return (
           <div
             key={i.sel}
             data-sel={i.sel}
-            className={`absolute ${bg ? "pointer-events-none" : "cursor-move"} ${tooMuch ? "outline-2 outline-dashed outline-[#e5322d]" : on ? "outline-2 outline-accent" : `outline-1 hover:outline-white/80 ${i.kind === "caption" ? "outline-dashed outline-white/40" : "outline-white/0"}`}`}
+            className={`absolute ${bg ? "pointer-events-none" : "cursor-move"} ${polygonOf(i) ? "" : tooMuch ? "outline-2 outline-dashed outline-[#e5322d]" : on ? "outline-2 outline-accent" : `outline-1 hover:outline-white/80 ${i.kind === "caption" ? "outline-dashed outline-white/40" : "outline-white/0"}`}`}
             style={{
               left: pct(i.dx + i.box.x, width),
               top: pct(i.box.y, PAGE.h),
               width: pct(i.box.w, width),
               height: pct(i.box.h, PAGE.h),
               transform: rot ? `rotate(${rot}deg)` : undefined,
-              boxShadow: on ? "0 0 0 1px rgb(255 255 255 / 0.8)" : undefined,
+              boxShadow: on && !polygonOf(i) ? "0 0 0 1px rgb(255 255 255 / 0.8)" : undefined,
             }}
           >
             {tooMuch && (
@@ -333,7 +437,7 @@ export function EditorOverlay({
                 !
               </span>
             )}
-            {on && single && !bg &&
+            {on && single && !bg && i.kind !== "shape" &&
               ["nw", "ne", "sw", "se"].map((c) => (
                 <span
                   key={c}
@@ -362,6 +466,41 @@ export function EditorOverlay({
           </div>
         );
       })}
+      <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" viewBox={`0 0 ${width} ${PAGE.h}`} preserveAspectRatio="none" aria-hidden="true">
+        {chosen.map((i) => {
+          const pts = polygonOf(i);
+          return pts ? (
+            <polygon key={i.sel} points={pts.map(([x, y]) => `${x + i.dx},${y}`).join(" ")} fill="none" stroke="var(--color-accent)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          ) : null;
+        })}
+        {mesh && mesh.mesh.cells.map((c, k) => (
+          <polygon key={k} points={c.map((v) => `${mesh.mesh.verts[v][0] + mesh.dx},${mesh.mesh.verts[v][1]}`).join(" ")} fill="none" stroke="#fff" strokeOpacity=".8" strokeDasharray="4 3" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        ))}
+      </svg>
+      {poly && poly.el.type === "fill" && (
+        <>
+          {poly.el.pts.map((q, k) => {
+            const r = poly.el.type === "fill" ? poly.el.pts[(k + 1) % poly.el.pts.length] : q;
+            return (
+              <span key={`e${k}`} data-edge={k} title="Sleep om deze zijde te verschuiven; dubbelklik voor een extra punt"
+                className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-move rounded-sm border-2 border-white bg-accent/70 shadow"
+                style={{ left: pct(poly.dx + (q[0] + r[0]) / 2, width), top: pct((q[1] + r[1]) / 2, PAGE.h) }} />
+            );
+          })}
+          {poly.el.pts.map((q, k) => (
+            <span key={`v${k}`} data-vert={k} title="Sleep dit punt; klik en Delete om het te verwijderen"
+              className={`absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 shadow ${vertex?.index === k && vertex.sel === poly.sel ? "border-accent bg-white" : "border-white bg-accent"}`}
+              style={{ left: pct(poly.dx + q[0], width), top: pct(q[1], PAGE.h) }} />
+          ))}
+        </>
+      )}
+      {mesh && mesh.mesh.verts.map((q, k) =>
+        q[0] > -8 && q[0] < PAGE.w + 8 && q[1] > -8 && q[1] < PAGE.h + 8 ? (
+          <span key={`m${k}`} data-mvert={k} title="Sleep om de indeling te veranderen"
+            className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-accent bg-white shadow"
+            style={{ left: pct(mesh.dx + Math.min(Math.max(q[0], -2), PAGE.w + 2), width), top: pct(Math.min(Math.max(q[1], -2), PAGE.h + 2), PAGE.h) }} />
+        ) : null,
+      )}
       {guides.x.map((x) => (
         <div key={`x${x}`} className="pointer-events-none absolute inset-y-0 w-px bg-[#ff2e88]" style={{ left: pct(x, width) }} />
       ))}
@@ -485,21 +624,60 @@ export interface BarActions {
   pickedHere: boolean;
   onFront: () => void;
   onBack: () => void;
+  /** Colours that suit the page (from its photos). */
+  tones: string[];
+}
+
+const SWATCHES = ["#ffffff", "#161513", "#f6f4ef", "#e9e2d0", "#f2c94c", "#f4a6a6", "#a8d5ba", "#9cc3e6", "#c3aed6", "#e07a5f"];
+
+/** Swatches, the page's own tones, any colour, and (for text) "automatisch contrast". */
+export function ColorChoice({ value, onChange, tones, auto }: { value: string; onChange: (c: string) => void; tones: string[]; auto?: boolean }) {
+  const sw = (c: string) => (
+    <button key={c} type="button" aria-label={c} title={c} onClick={() => onChange(c)}
+      className={`h-7 w-7 rounded-full border shadow-sm ${value.toLowerCase() === c.toLowerCase() ? "ring-2 ring-accent ring-offset-1" : "border-hair"}`}
+      style={{ background: c }} />
+  );
+  return (
+    <div className="space-y-2">
+      {auto && (
+        <button type="button" onClick={() => onChange("auto")}
+          className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-sm ${value === "auto" ? "border-accent bg-accent/10" : "border-hair hover:bg-page"}`}>
+          <span className="h-5 w-5 rounded-full border border-hair" style={{ background: "linear-gradient(90deg,#fff 50%,#161513 50%)" }} />
+          Automatisch contrast
+        </button>
+      )}
+      <div className="flex flex-wrap gap-1.5">{SWATCHES.map(sw)}</div>
+      {tones.length > 0 && (
+        <div>
+          <div className="mb-1 text-[11px] text-muted">Uit de foto's</div>
+          <div className="flex flex-wrap gap-1.5">{tones.map(sw)}</div>
+        </div>
+      )}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="color" value={value.startsWith("#") && value.length === 7 ? value : "#ffffff"} onChange={(e) => onChange(e.target.value)}
+          className="h-7 w-10 cursor-pointer rounded border border-hair bg-transparent" />
+        Andere kleur
+      </label>
+    </div>
+  );
 }
 
 /** Floats next to the selection; what it offers depends on what is selected. */
 export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions }) {
-  const [borders, setBorders] = useState(false);
+  const [menu, setMenu] = useState<"border" | "color" | null>(null);
   const one = selected.length === 1 ? selected[0] : null;
   const kinds = new Set(selected.map((i) => i.kind));
-  const zoom = (d: number) => a.apply((i) => (i.el.type === "caption" ? {} : { zoom: clamp((i.el.zoom ?? 1) + d, 1, 4) }));
+  const every = (...ks: Kind[]) => [...kinds].every((k) => ks.includes(k));
+  const zoom = (d: number) => a.apply((i) => (i.el.type === "photo" || i.el.type === "month" ? { zoom: clamp((i.el.zoom ?? 1) + d, 1, 4) } : {}));
   const rot = (d: number) => a.apply((i) => (i.el.type === "photo" ? { rot: Math.round(((i.el.rot ?? 0) + d) * 10) / 10 } : {}));
   const B = PAGE.bleed;
   const isFull = (i: Item) => i.box.x <= -B + 0.1 && i.box.y <= -B + 0.1 && i.box.w >= PAGE.w + 2 * B - 0.1 && i.box.h >= PAGE.h + 2 * B - 0.1;
   const caption = one?.el.type === "caption" ? one.el : null;
   const month = one?.el.type === "month" ? one.el : null;
-  const photoish = [...kinds].every((k) => k === "photo" || k === "shape" || k === "bg" || k === "month");
-  const framed = [...kinds].every((k) => k === "photo");
+  const fillEl = one?.el.type === "fill" ? one.el : null;
+  const framed = every("photo");
+  const colour = caption ? (caption.color ?? "#fff") : fillEl?.color;
+  const pictured = every("photo", "shape", "bg", "month", "cell");
   return (
     <div className="relative flex flex-wrap items-center justify-center gap-0.5 rounded-xl border border-hair bg-surface p-1 text-ink shadow-lg">
       {!one && <span className="px-1.5 text-xs text-muted">{selected.length} geselecteerd</span>}
@@ -509,26 +687,32 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
           <TextArea key={one!.sel + caption.text} value={caption.text} onCommit={(text) => a.apply(() => ({ text }))} />
           <IconBtn icon="smaller" label="Kleinere tekst" onClick={() => a.apply(() => ({ size: Math.max(2, (caption.size ?? 3.53) / 1.15) }))} />
           <IconBtn icon="bigger" label="Grotere tekst" onClick={() => a.apply(() => ({ size: Math.min(40, (caption.size ?? 3.53) * 1.15) }))} />
-          <IconBtn icon="color" label={caption.color === "#000" ? "Witte tekst" : "Zwarte tekst"} onClick={() => a.apply(() => ({ color: caption.color === "#000" ? "#fff" : "#000" }))} />
           <IconBtn icon={`align${caption.align ?? "left"}`} label={{ left: "Links uitgelijnd", center: "Gecentreerd", right: "Rechts uitgelijnd" }[caption.align ?? "left"]}
             onClick={() => a.apply(() => ({ align: ({ left: "center", center: "right", right: "left" } as const)[caption.align ?? "left"] }))} />
-          <Sep />
         </>
       )}
+      {colour !== undefined && (
+        <button type="button" aria-label={caption ? "Tekstkleur" : "Kleur"} title={caption ? "Tekstkleur" : "Kleur"} onClick={() => setMenu(menu === "color" ? null : "color")}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg ${menu === "color" ? "bg-page" : "hover:bg-page"}`}>
+          <span className="h-5 w-5 rounded-full border border-hair shadow-sm"
+            style={{ background: colour === "auto" ? "linear-gradient(90deg,#fff 50%,#161513 50%)" : colour }} />
+        </button>
+      )}
+      {(caption || fillEl) && <Sep />}
       {month && (
         <>
           <TextField key={one!.sel + month.name} value={month.name} label="Maand" onCommit={(text) => a.apply(() => ({ text }))} />
           <Sep />
         </>
       )}
-      {one && one.kind !== "caption" && <IconBtn icon="swap" label="Andere foto kiezen" onClick={a.onSwap} />}
-      {photoish && (
+      {one && pictured && <IconBtn icon="swap" label="Andere foto kiezen" onClick={a.onSwap} />}
+      {pictured && (
         <>
           <IconBtn icon="zoomOut" label="Uitzoomen" onClick={() => zoom(-0.15)} />
           <IconBtn icon="zoomIn" label="Inzoomen" onClick={() => zoom(0.15)} />
         </>
       )}
-      {(kinds.has("photo") || kinds.has("shape")) && (
+      {(kinds.has("photo") || kinds.has("shape")) && !kinds.has("cell") && (
         <>
           <IconBtn icon="rotL" label="Draai linksom" onClick={() => rot(-3)} />
           <IconBtn icon="rotR" label="Draai rechtsom" onClick={() => rot(3)} />
@@ -542,10 +726,10 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
               const back = selected.every(isFull);
               a.apply(() => (back ? { x: undefined, y: undefined, w: undefined, h: undefined } : { x: -B, y: -B, w: PAGE.w + 2 * B, h: PAGE.h + 2 * B, rot: 0 }));
             }} />
-          <IconBtn icon="border" label="Rand" active={borders} onClick={() => setBorders(!borders)} />
+          <IconBtn icon="border" label="Rand" active={menu === "border"} onClick={() => setMenu(menu === "border" ? null : "border")} />
         </>
       )}
-      {!kinds.has("bg") && (
+      {!kinds.has("bg") && !kinds.has("cell") && !kinds.has("page") && (
         <>
           <IconBtn icon="front" label="Naar voren" onClick={a.onFront} />
           <IconBtn icon="back" label="Naar achteren" onClick={a.onBack} />
@@ -553,16 +737,21 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
       )}
       <Sep />
       <IconBtn icon="reset" label="Terug naar het voorstel" onClick={() => a.apply(() => null)} />
-      {![...kinds].every((k) => k === "shape") && <IconBtn icon="hide" label="Van de pagina halen (Delete)" onClick={() => a.apply(() => ({ hidden: true }))} />}
-      {borders && framed && (
+      {!every("shape", "cell") && <IconBtn icon="hide" label="Van de pagina halen (Delete)" onClick={() => a.apply(() => ({ hidden: true }))} />}
+      {menu === "border" && framed && (
         <div className="absolute top-full right-0 z-20 mt-1.5 w-40 rounded-xl border border-hair bg-surface p-1 shadow-lg">
           {BORDERS.map((b) => (
-            <button key={b.label} type="button" onClick={() => { a.apply(() => ({ border: b.border })); setBorders(false); }}
+            <button key={b.label} type="button" onClick={() => { a.apply(() => ({ border: b.border })); setMenu(null); }}
               className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-page">
               <span className="h-4 w-4 rounded-sm bg-muted/40" style={{ outline: b.border ? `${Math.max(1, b.border.w)}px solid ${b.border.color}` : "1px dashed var(--color-hair)", outlineOffset: 0 }} />
               {b.label}
             </button>
           ))}
+        </div>
+      )}
+      {menu === "color" && colour !== undefined && (
+        <div className="absolute top-full left-0 z-20 mt-1.5 w-64 rounded-xl border border-hair bg-surface p-3 shadow-lg">
+          <ColorChoice value={colour} tones={a.tones} auto={!!caption} onChange={(color) => a.apply(() => ({ color }))} />
         </div>
       )}
     </div>

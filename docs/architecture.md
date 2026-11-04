@@ -97,6 +97,23 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   frames (no `box`) are converted on load and on their first change.
 - "Bekijken" shows the book as large as the window allows (no filmstrip) with a full-screen
   button: the Fullscreen API, or the whole window where there is none (iPhone Safari).
+- Text colour: swatches, the page's photo tones, any colour, or "auto": `lib/contrast.ts` traces
+  7 × 4 points under the frame to the topmost element (photo pixels from the thumbnails, colour
+  areas, the page) and picks white or near-black, whichever contrasts more; it follows the text.
+- Colour areas: every page's colour is a `fill` element (slot `pagefill`, z −1, the full page
+  incl. bleed); more can be added (`add: "fill"`). A selected area shows its points (drag; click +
+  Delete removes one, down to a triangle) and the middles of its sides (drag moves the side along
+  its normal; double-click adds a point). Edits store the points (`pts`).
+- The page itself: a click on an empty spot selects it and opens the page menu (`PagePanel`, right
+  on desktop, bottom on a phone): colour, shape, "+ Kleurvlak", background photo (choose one:
+  `add: "photo"`), and the advanced layouts.
+- Layouts as a mesh (`lib/mesh.ts`, edit slot `mesh` = `{mesh, cells}`): points shared by photo
+  cells; each cell is drawn inset by half the gap, so gaps stay even when points move. Templates:
+  Raster (rows within the margins), Schuin (rows with shaken points, full bleed, like 2022 p. 32–33)
+  and Honingraat (at least 14 hexagons, full bleed, like 2022 p. 3; extra cells get event photos
+  not yet in the book). A mesh replaces the page's plain photos; month titles, captions and
+  backgrounds stay. Cells (`cell0…`) can be swapped, zoomed and panned (drag inside), not moved;
+  "Punten verschuiven" shows the mesh points to drag. Gap and bleed are settings of the mesh.
 - Not editable yet: rotating month titles and captions, moving elements between pages.
 
 ## Years (`/boek/:year`)
