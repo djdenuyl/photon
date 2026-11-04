@@ -75,6 +75,19 @@ describe("applyEdits", () => {
     expect(pageBody(out, photos, (p) => p.thumb)).toContain("#ebe7df");
   });
 
+  it("turns a photo frame into a polygon by its points (and back)", () => {
+    const page = fresh()[0].pages[0];
+    const key = pageKey(page);
+    const photo = plainPhotos(page)[0];
+    const tri: [number, number][] = [[20, 20], [120, 40], [40, 140]];
+    let ed = updateElement({}, key, photo.id, { pts: tri });
+    let out = applyEdits(fresh(), ed)[0].pages[0].elements.find((e) => e.slot === photo.id);
+    expect(out).toMatchObject({ type: "photo", x: 20, y: 20, w: 100, h: 120, shape: { kind: "poly" } });
+    ed = updateElement(ed, key, photo.id, { pts: undefined });
+    out = applyEdits(fresh(), ed)[0].pages[0].elements.find((e) => e.slot === photo.id);
+    expect(out?.type === "photo" && out.shape).toBeFalsy();
+  });
+
   it("reshapes a colour area by its points", () => {
     const page = fresh()[0].pages[0];
     const tri: [number, number][] = [[0, 0], [210, 0], [0, 280]];

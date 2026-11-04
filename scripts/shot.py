@@ -18,7 +18,7 @@ from shutil import which
 from subprocess import run
 from urllib.parse import urlencode
 
-from itsdangerous import URLSafeTimedSerializer
+from itsdangerous import TimestampSigner, URLSafeTimedSerializer
 from playwright.sync_api import sync_playwright
 
 from photon.settings import get_settings
@@ -34,9 +34,18 @@ def session_secret() -> str:
     return run(cmd, check=True, capture_output=True, text=True).stdout.strip()
 
 
+class EarlierSigner(TimestampSigner):
+    """Stamps 30 s back: a clock running ahead of the server's would make the link "from the
+    future", which itsdangerous refuses."""
+
+    def get_timestamp(self) -> int:
+        return super().get_timestamp() - 30
+
+
 def sign_in_link(path: str) -> str:
     email = sorted(SETTINGS.allowed_email_set)[0]
-    signer = URLSafeTimedSerializer(session_secret(), salt="photon-agent-login")
+    secret = session_secret()
+    signer = URLSafeTimedSerializer(secret, salt="photon-agent-login", signer=EarlierSigner)
     token = signer.dumps({"email": email})
     base = SETTINGS.public_url or SETTINGS.base_url
     return f"{base}/api/auth/agent?{urlencode({'t': token, 'next': path})}"

@@ -35,9 +35,16 @@ describe("makeMesh", () => {
   });
 
   it("shakes the points for Schuin, the same way for the same page", () => {
-    const a = makeMesh("schuin", 6, "page"), b = makeMesh("schuin", 6, "page"), r = makeMesh("raster", 6, "page", { bleed: true, gap: 3 });
+    const a = makeMesh("schuin", 6, "page"), b = makeMesh("schuin", 6, "page"), r = makeMesh("raster", 6, "page", { gap: 3 });
     expect(a.verts).toEqual(b.verts);
     expect(a.verts).not.toEqual(r.verts);
+  });
+
+  it("keeps Schuin within the margins unless asked", () => {
+    const all = bboxOf(cellPolygons(makeMesh("schuin", 6, "p")).flat());
+    expect(all.x).toBeGreaterThanOrEqual(9.9);
+    expect(all.y).toBeGreaterThanOrEqual(9.9);
+    expect(makeMesh("schuin", 6, "p", { bleed: true }).bleed).toBe(true);
   });
 
   it("gives a honeycomb at least 14 cells, into the bleed", () => {

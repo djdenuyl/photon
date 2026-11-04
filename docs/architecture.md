@@ -88,8 +88,12 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
 - A frame without a photo (an empty cell, a letter without one) is drawn as a light area with a
   photo icon; a click on it opens the picker.
 - While the picker is open, the spread's other photos are highlighted: a click on one trades the
-  two photos. The picker marks photos already in the book, with "2×", "3×" when they're in it
-  more than once.
+  two photos. The picker marks photos already in the book ("in boek"), counted per spread (a photo
+  across both pages of a spread is one), "2×", "3×" when they're on more spreads, and "op kaft"
+  for the covers apart; filters "nog niet in het boek" and "meer dan 1× in het boek".
+- A photo frame can get its own outline (the shape button): its `pts` (mm) make it a polygon with
+  the same point handles as colour areas (and the back cover's shards); "terug naar een
+  rechthoek" clears them.
 - Save status below the book: bouncing dots while saving, a green check when saved, a red "!"
   when it failed (it retries); a fixed size so the bar doesn't jump.
 - The swap picker: search, scope (event / month / this book / year; cover parts, backgrounds and
@@ -134,7 +138,8 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   later can't catch a click meant for a handle.
 - Layouts as a mesh (`lib/mesh.ts`, edit slot `mesh` = `{mesh, cells}`): points shared by photo
   cells; each cell is drawn inset by half the gap, so gaps stay even when points move. Templates:
-  Raster (rows within the margins), Schuin (rows with shaken points, full bleed, like 2022 p. 32–33)
+  Raster (rows within the margins), Schuin (rows with shaken points, within the margins unless
+  "Tot in de afloop" is on — full bleed cut the outer photos at the trim; like 2022 p. 32–33)
   and Honingraat (at least 14 hexagons, full bleed, like 2022 p. 3; cells beyond the page's photos
   stay empty). A mesh replaces the page's plain photos; month titles, captions and
   backgrounds stay. Cells (`cell0…`) can be swapped, zoomed and panned (drag inside), not moved;

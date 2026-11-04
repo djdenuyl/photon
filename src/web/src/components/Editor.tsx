@@ -57,7 +57,8 @@ export function itemsFor(pages: { page: Page | null; dx: number }[]): Item[] {
 export function moveBy(i: Item, dx: number, dy: number): ElementEdit | null {
   const el = i.el;
   if (i.kind === "bg" || i.kind === "cell" || i.kind === "page") return null;
-  if (el.type === "fill") return { pts: el.pts.map(([x, y]): Pt => [x + dx, y + dy]) };
+  const pts = editablePts(i);
+  if (pts) return { pts: pts.map(([x, y]): Pt => [x + dx, y + dy]) };
   return withFrame(i, { x: el.x + dx, y: el.y + dy });
 }
 
@@ -71,6 +72,13 @@ function polygonOf(i: Item): Pt[] | null {
 
 /** Items that show a photo and can trade it with another. */
 const tradeable = (i: Item) => i.kind === "photo" || i.kind === "cell" || i.kind === "shape" || i.kind === "month";
+
+/** The points that can be dragged: colour areas and polygon photos (not mesh cells, they follow the mesh). */
+function editablePts(i: Item): Pt[] | null {
+  if (i.el.type === "fill") return i.el.pts;
+  if (i.el.type === "photo" && i.el.shape?.kind === "poly" && i.el.cell === undefined) return polygonOf(i);
+  return null;
+}
 
 /** Items picked by their outline rather than their box (they would overlap): mesh cells and colour areas. */
 const byOutline = (i: Item) => i.kind === "cell" || i.kind === "fill";
@@ -191,9 +199,8 @@ export function EditorOverlay({
       const i = items.find((it) => it.sel === vertex.sel);
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (i?.el.type === "fill" && i.el.pts.length > 3) {
-        onCommit(updateElement(edits, i.key, i.slot, { pts: i.el.pts.filter((_, k) => k !== vertex.index) }));
-      }
+      const pts = i ? editablePts(i) : null;
+      if (i && pts && pts.length > 3) onCommit(updateElement(edits, i.key, i.slot, { pts: pts.filter((_, k) => k !== vertex.index) }));
       setVertex(null);
     };
     window.addEventListener("keydown", onKey, true);
@@ -302,9 +309,9 @@ export function EditorOverlay({
       }
       next = d.targets.reduce((acc, t) => updateElement(acc, t.key, t.slot, moveBy(t, dx, dy) ?? {}), d.base);
     } else if (d.mode === "vert" || d.mode === "edge") {
-      const el = d.target.el;
-      if (el.type !== "fill") return;
-      const pts = el.pts.map((q): Pt => [q[0], q[1]]);
+      const own = editablePts(d.target);
+      if (!own) return;
+      const pts = own.map((q): Pt => [q[0], q[1]]);
       if (d.mode === "vert") {
         pts[d.index] = [pts[d.index][0] + dx, pts[d.index][1] + dy];
       } else {
@@ -380,9 +387,10 @@ export function EditorOverlay({
       return;
     }
     if (d.mode === "vert" && !d.moved) setVertex({ sel: d.target.sel, index: d.index });
-    if (d.mode === "edge" && !d.moved && d.target.el.type === "fill") {
+    const sidePts = d.mode === "edge" ? editablePts(d.target) : null;
+    if (d.mode === "edge" && !d.moved && sidePts) {
       // a click (not a drag) on a side's middle: a new point there
-      const pts = d.target.el.pts, k = d.index, a = pts[k], b = pts[(k + 1) % pts.length];
+      const pts = sidePts, k = d.index, a = pts[k], b = pts[(k + 1) % pts.length];
       onCommit(updateElement(edits, d.target.key, d.target.slot, { pts: [...pts.slice(0, k + 1), [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ...pts.slice(k + 1)] }));
       setVertex({ sel: d.target.sel, index: k + 1 });
     }
@@ -404,7 +412,8 @@ export function EditorOverlay({
 
   const pct = (v: number, of: number) => `${(v / of) * 100}%`;
   const single = chosen.length === 1;
-  const poly = !mesh && single && (chosen[0].kind === "fill" || chosen[0].kind === "page") && chosen[0].el.type === "fill" ? chosen[0] : null;
+  const poly = !mesh && single && editablePts(chosen[0]) ? chosen[0] : null;
+  const polyPts = poly ? editablePts(poly)! : [];
   let barStyle: CSSProperties | null = null;
   if (chosen.length && bar && !busy && !band) {
     const x0 = Math.max(0, Math.min(...chosen.map((i) => i.dx + i.box.x)));
@@ -481,31 +490,30 @@ export function EditorOverlay({
           <polygon key={k} points={c.map((v) => `${mesh.mesh.verts[v][0] + mesh.dx},${mesh.mesh.verts[v][1]}`).join(" ")} fill="none" stroke="#fff" strokeOpacity=".8" strokeDasharray="4 3" strokeWidth="1" vectorEffect="non-scaling-stroke" />
         ))}
       </svg>
-      {poly && poly.el.type === "fill" && (
+      {poly && (
         <>
-          {poly.el.pts.map((q, k) => {
-            const r = poly.el.type === "fill" ? poly.el.pts[(k + 1) % poly.el.pts.length] : q;
+          {polyPts.map((q, k) => {
+            const r = polyPts[(k + 1) % polyPts.length];
             return (
               <span key={`e${k}`} data-edge={k} title="Klik voor een extra punt, sleep om deze zijde te verschuiven"
                 className="absolute z-[7] flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center rounded-sm border-2 border-white bg-accent/70 text-[11px] leading-none font-bold text-white shadow"
                 style={{ left: pct(poly.dx + (q[0] + r[0]) / 2, width), top: pct((q[1] + r[1]) / 2, PAGE.h) }}>+</span>
             );
           })}
-          {poly.el.pts.map((q, k) => (
+          {polyPts.map((q, k) => (
             <span key={`v${k}`} data-vert={k} title="Sleep dit punt; klik en Delete om het te verwijderen"
               className={`absolute z-[7] h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 shadow ${vertex?.index === k && vertex.sel === poly.sel ? "border-accent bg-white" : "border-white bg-accent"}`}
               style={{ left: pct(poly.dx + q[0], width), top: pct(q[1], PAGE.h) }} />
           ))}
         </>
       )}
-      {poly && poly.el.type === "fill" && vertex?.sel === poly.sel && poly.el.pts.length > 3 && poly.el.pts[vertex.index] && (() => {
-        const el = poly.el;
-        const q = el.pts[vertex.index];
+      {poly && vertex?.sel === poly.sel && polyPts.length > 3 && polyPts[vertex.index] && (() => {
+        const q = polyPts[vertex.index];
         return (
           <button type="button" aria-label="Punt verwijderen" title="Punt verwijderen"
             onPointerDown={(e) => {
               e.stopPropagation();
-              onCommit(updateElement(edits, poly.key, poly.slot, { pts: el.pts.filter((_, k) => k !== vertex.index) }));
+              onCommit(updateElement(edits, poly.key, poly.slot, { pts: polyPts.filter((_, k) => k !== vertex.index) }));
               setVertex(null);
             }}
             className="absolute z-[8] flex h-5 w-5 items-center justify-center rounded-full bg-[#d92d20] text-xs font-bold text-white shadow"
@@ -610,6 +618,7 @@ const ICONS: Record<string, ReactNode> = {
   front: <><rect x="3" y="3" width="12" height="12" rx="1.5" /><rect x="9" y="9" width="12" height="12" rx="1.5" fill="currentColor" /></>,
   back: <><rect x="9" y="9" width="12" height="12" rx="1.5" /><rect x="3" y="3" width="12" height="12" rx="1.5" fill="currentColor" /></>,
   reset: <><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
+  shape: <path d="M5 4l13 3 3 11-12 3-6-9z" />,
   page: <><rect x="4" y="3" width="16" height="18" rx="1.5" /><path d="M4 15l5-5 4 4 2-2 5 5" /></>,
   note: <><path d="M5 3h10l4 4v14H5z" /><path d="M14 3v5h5M8.5 12h7M8.5 16h5" /></>,
   trash: <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />,
@@ -843,6 +852,10 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
           <IconBtn icon="rotL" label="Draai linksom" onClick={() => rot(-3)} />
           <IconBtn icon="rotR" label="Draai rechtsom" onClick={() => rot(3)} />
         </>
+      )}
+      {one && !one.page.cover && (one.kind === "photo" || (one.kind === "shape" && one.el.type === "photo" && one.el.shape?.kind === "poly")) && (
+        <IconBtn icon="shape" label={one.kind === "shape" ? "Terug naar een rechthoek" : "Vorm: sleep de hoeken, + voor een extra punt"} active={one.kind === "shape"}
+          onClick={() => a.apply((i) => (i.kind === "shape" ? { pts: undefined } : { pts: [[i.box.x, i.box.y], [i.box.x + i.box.w, i.box.y], [i.box.x + i.box.w, i.box.y + i.box.h], [i.box.x, i.box.y + i.box.h]], border: null, rot: 0 }))} />
       )}
       {one?.kind === "photo" && !one.page.cover && <IconBtn icon="star" label="Grote foto van deze gebeurtenis" active={a.pickedHere} onClick={a.onPick} />}
       {framed && (

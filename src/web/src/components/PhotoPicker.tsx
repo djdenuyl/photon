@@ -16,6 +16,7 @@ export function PhotoPicker({
   bookEvents,
   initialScope,
   placed,
+  onCover,
   onPick,
   onClose,
 }: {
@@ -26,8 +27,10 @@ export function PhotoPicker({
   /** The events of the book being edited (the "Dit boek" scope). */
   bookEvents: Set<string>;
   initialScope: Scope;
-  /** How often each photo is in the book (pages, covers, month titles). */
+  /** On how many spreads each photo is (the covers apart). */
   placed: Map<string, number>;
+  /** Photos on a cover. */
+  onCover: Set<string>;
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
@@ -36,6 +39,7 @@ export function PhotoPicker({
   const [closeup, setCloseup] = useState(false);
   const [scenic, setScenic] = useState(false);
   const [unused, setUnused] = useState(false);
+  const [twice, setTwice] = useState(false);
   const [scope, setScope] = useState<Scope>(initialScope);
   const [query, setQuery] = useState("");
   const eventOf = useMemo(() => {
@@ -59,10 +63,11 @@ export function PhotoPicker({
       if (closeup && !l.closeup) return false;
       if (scenic && !l.scenic) return false;
       if (unused && placed.has(p.id)) return false;
+      if (twice && (placed.get(p.id) ?? 0) < 2) return false;
       if (q && !`${p.id} ${ev.title} ${ev.summary}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [photos, eventOf, current, event, bookEvents, people, company, closeup, scenic, unused, placed, scope, query]);
+  }, [photos, eventOf, current, event, bookEvents, people, company, closeup, scenic, unused, twice, placed, scope, query]);
 
   const chip = (on: boolean) => `rounded-full border px-3 py-1 text-xs ${on ? "border-ink bg-ink text-page" : "border-hair bg-page text-ink-2"}`;
   return (
@@ -90,7 +95,8 @@ export function PhotoPicker({
             <button type="button" className={chip(company === "others")} onClick={() => setCompany(company === "others" ? "all" : "others")}>met anderen</button>
             <button type="button" className={chip(closeup)} onClick={() => setCloseup(!closeup)}>close-up</button>
             <button type="button" className={chip(scenic)} onClick={() => setScenic(!scenic)}>sfeerbeeld</button>
-            <button type="button" className={chip(unused)} onClick={() => setUnused(!unused)}>nog niet in het boek</button>
+            <button type="button" className={chip(unused)} onClick={() => { setUnused(!unused); setTwice(false); }}>nog niet in het boek</button>
+            <button type="button" className={chip(twice)} onClick={() => { setTwice(!twice); setUnused(false); }}>meer dan 1× in het boek</button>
           </div>
         </div>
         <div className="p-3">
@@ -99,10 +105,11 @@ export function PhotoPicker({
             {results.map((p) => (
               <button key={p.id} type="button" onClick={() => onPick(p.id)} className="relative overflow-hidden rounded" title={`${p.id} · ${eventOf.get(p.id)?.title ?? ""}`}>
                 <img src={thumbUrl(p)} alt="" loading="lazy" className="aspect-square w-full object-cover" />
-                {placed.has(p.id) && (
-                  <span className="absolute top-1 left-1 flex gap-0.5">
-                    <span className="rounded bg-black/60 px-1 text-[10px] text-white">in boek</span>
+                {(placed.has(p.id) || onCover.has(p.id)) && (
+                  <span className="absolute top-1 left-1 flex flex-wrap gap-0.5">
+                    {placed.has(p.id) && <span className="rounded bg-black/60 px-1 text-[10px] text-white">in boek</span>}
                     {(placed.get(p.id) ?? 0) > 1 && <span className="rounded bg-[#e8590c] px-1 text-[10px] font-bold text-white">{placed.get(p.id)}×</span>}
+                    {onCover.has(p.id) && <span className="rounded bg-[#5b4bb7] px-1 text-[10px] text-white">op kaft</span>}
                   </span>
                 )}
                 <span className="absolute right-1 bottom-1 rounded bg-black/60 px-1 font-mono text-[10px] text-white">{p.id}</span>

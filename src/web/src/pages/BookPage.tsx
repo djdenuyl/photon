@@ -361,11 +361,17 @@ export function BookPage() {
   const data = year.data;
   const photosPlaced = book.pages.reduce((n, p) => n + p.elements.filter((e) => e.type === "photo").length, 0);
   // every photo used anywhere in either book, the covers included
-  // how often each photo is in the books (pages, covers, month titles)
-  const placedIds = new Map<string, number>();
-  for (const b of books!) for (const p of allPages(b)) for (const e of p.elements) {
+  // how often each photo is in the books: once per spread (a photo across both pages of a spread
+  // is one photo), the covers apart
+  const photoIds = (p: Page | null) => (p?.elements ?? []).flatMap((e) => {
     const id = e.type === "photo" ? e.id : e.type === "month" ? e.photo : null;
-    if (id) placedIds.set(id, (placedIds.get(id) ?? 0) + 1);
+    return id ? [id] : [];
+  });
+  const placedIds = new Map<string, number>();
+  const onCover = new Set<string>();
+  for (const b of books!) {
+    for (const sp of b.spreads) for (const id of new Set([...photoIds(sp.left), ...photoIds(sp.right)])) placedIds.set(id, (placedIds.get(id) ?? 0) + 1);
+    for (const id of [...photoIds(b.covers.front), ...photoIds(b.covers.back)]) onCover.add(id);
   }
 
   const onStageClick = (e: React.MouseEvent) => {
@@ -585,6 +591,7 @@ export function BookPage() {
           bookEvents={new Set(book.pages.map((p) => p.event.id))}
           initialScope={addingBg.event.photoIds.length ? "event" : "book"}
           placed={placedIds}
+          onCover={onCover}
           onPick={(id) => {
             const key = `${addingBg.event.id}:${addingBg.k}`;
             commit(updateElement(edits, key, `bgphoto${Date.now().toString(36)}`, { add: "photo", photo: id }));
@@ -604,6 +611,7 @@ export function BookPage() {
           // cover parts, backgrounds and month titles look in the whole book; a grid photo in its event
           initialScope={swapping.kind === "photo" && !swapping.page.cover ? "event" : "book"}
           placed={placedIds}
+          onCover={onCover}
           onPick={(id) => {
             const old = photoOf(swapping);
             // a photo in the book's grid trades places; cover parts, backgrounds and month titles just take it

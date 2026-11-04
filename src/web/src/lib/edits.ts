@@ -138,6 +138,12 @@ function applyPage(page: Page, pe: PageEdits | undefined): void {
       if (ed?.focus) o.focus = ed.focus;
       if (ed?.border !== undefined) o.border = ed.border;
       if (ed?.veil !== undefined) o.veil = ed.veil;
+      // its own outline: the frame becomes a polygon, its box the outline's bounding box
+      if (ed?.pts && ed.pts.length >= 3 && e.cell === undefined && e.shape?.kind !== "letter") {
+        const box = bboxOf(ed.pts);
+        const tint = e.shape?.kind === "poly" ? e.shape.tint : undefined;
+        Object.assign(o, box, { shape: { kind: "poly", tint, pts: ed.pts.map(([x, y]): Pt => [(x - box.x) / box.w, (y - box.y) / box.h]) } });
+      }
       out.push(o);
     } else if (e.type === "month") {
       const o = { ...e, z };

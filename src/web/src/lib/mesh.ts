@@ -119,7 +119,9 @@ function hexagons(n: number, box: Box): { verts: Pt[]; cells: number[][] } {
 
 export function makeMesh(template: Mesh["template"], n: number, seed: string, opts?: { gap?: number; bleed?: boolean }): Mesh {
   const gap = opts?.gap ?? (template === "raster" ? 5 : 3);
-  const bleed = opts?.bleed ?? template !== "raster";
+  // within the margins unless asked (a full-bleed shattered page loses its outer photos' edges
+  // at the cut); the honeycomb is meant to run off the page
+  const bleed = opts?.bleed ?? template === "honingraat";
   const box = domain(gap, bleed);
   // a honeycomb needs small cells to read as one (2022 had 17 on a page): extra cells get more photos
   if (template === "honingraat") return { template, gap, bleed, ...hexagons(Math.max(n, 14), box) };
