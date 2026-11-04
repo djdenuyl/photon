@@ -328,6 +328,9 @@ export function BookPage() {
           event={swapping.page.event}
           photos={data.photos}
           events={data.plan.events}
+          bookEvents={new Set(book.pages.map((p) => p.event.id))}
+          // cover parts, backgrounds and month titles look in the whole book; a grid photo in its event
+          initialScope={swapping.kind === "photo" && !swapping.page.cover ? "event" : "book"}
           placed={placedIds}
           onPick={(id) => {
             const old = photoOf(swapping);

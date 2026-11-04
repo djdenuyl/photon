@@ -6,13 +6,15 @@ import type { Photo, Photos, PlanEvent } from "@/lib/types";
 
 const FAMILY = ["Anne", "David", "Lou", "Oos"];
 type Company = "all" | "us" | "others";
-type Scope = "event" | "month" | "year";
+type Scope = "event" | "month" | "book" | "year";
 
 export function PhotoPicker({
   current,
   event,
   photos,
   events,
+  bookEvents,
+  initialScope,
   placed,
   onPick,
   onClose,
@@ -21,6 +23,9 @@ export function PhotoPicker({
   event: PlanEvent;
   photos: Photos;
   events: PlanEvent[];
+  /** The events of the book being edited (the "Dit boek" scope). */
+  bookEvents: Set<string>;
+  initialScope: Scope;
   placed: Set<string>;
   onPick: (id: string) => void;
   onClose: () => void;
@@ -29,7 +34,7 @@ export function PhotoPicker({
   const [company, setCompany] = useState<Company>("all");
   const [closeup, setCloseup] = useState(false);
   const [scenic, setScenic] = useState(false);
-  const [scope, setScope] = useState<Scope>(event.photoIds.length ? "event" : "year");
+  const [scope, setScope] = useState<Scope>(initialScope);
   const [query, setQuery] = useState("");
   const eventOf = useMemo(() => {
     const m = new Map<string, PlanEvent>();
@@ -44,6 +49,7 @@ export function PhotoPicker({
       if (!ev || p.id === current?.id) return false;
       if (scope === "event" && ev.id !== event.id) return false;
       if (scope === "month" && ev.start.slice(0, 7) !== month) return false;
+      if (scope === "book" && !bookEvents.has(ev.id)) return false;
       const l = p.label ?? {};
       for (const f of people) if (!(l.family ?? []).includes(f)) return false;
       if (company === "us" && (l.others ?? 0) > 0) return false;
@@ -53,7 +59,7 @@ export function PhotoPicker({
       if (q && !`${p.id} ${ev.title} ${ev.summary}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [photos, eventOf, current, event, people, company, closeup, scenic, scope, query]);
+  }, [photos, eventOf, current, event, bookEvents, people, company, closeup, scenic, scope, query]);
 
   const chip = (on: boolean) => `rounded-full border px-3 py-1 text-xs ${on ? "border-ink bg-ink text-page" : "border-hair bg-page text-ink-2"}`;
   return createPortal(
@@ -72,9 +78,9 @@ export function PhotoPicker({
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Zoek op gebeurtenis of foto-nummer…"
             className="w-full rounded-lg border border-hair bg-page px-3 py-2 text-sm" />
           <div className="flex flex-wrap gap-1.5">
-            {(["event", "month", "year"] as const).map((s) => (
+            {(event.photoIds.length ? (["event", "month", "book", "year"] as const) : (["book", "year"] as const)).map((s) => (
               <button key={s} type="button" className={chip(scope === s)} onClick={() => setScope(s)}>
-                {s === "event" ? "Deze gebeurtenis" : s === "month" ? "Deze maand" : "Heel het jaar"}
+                {{ event: "Deze gebeurtenis", month: "Deze maand", book: "Dit boek", year: "Heel het jaar" }[s]}
               </button>
             ))}
           </div>
