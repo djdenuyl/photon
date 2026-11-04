@@ -12,7 +12,7 @@ const WHITE = "#ffffff";
 type Pixels = { data: Uint8ClampedArray; w: number; h: number };
 const cache = new Map<string, Promise<Pixels | null>>();
 
-function pixels(url: string): Promise<Pixels | null> {
+export function pixels(url: string): Promise<Pixels | null> {
   let p = cache.get(url);
   if (!p) {
     p = new Promise((resolve) => {

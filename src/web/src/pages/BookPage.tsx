@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BookViewer, type Slide } from "@/components/BookViewer";
 import { EditBar, EditorOverlay, itemsFor, moveBy, photoOf, SelectionBar, withFrame, type Item } from "@/components/Editor";
+import { NotesDrawer, type NoteTarget } from "@/components/NotesDrawer";
 import { PagePanel } from "@/components/PagePanel";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { PhotoSheet } from "@/components/PhotoSheet";
@@ -15,6 +16,9 @@ import { allPages, applyEdits, parseEdits, serializeEdits, swapPhoto, updateElem
 import { buildBooks, PAGE, pageBody, renderPage, renderSpread, type Book, type Page } from "@/lib/layout";
 import { useAutoColors } from "@/lib/contrast";
 import { makeMesh, type Mesh } from "@/lib/mesh";
+import { newNote, newNoteId, useNotes, type Note } from "@/lib/notes";
+import { usePalette } from "@/lib/palette";
+import { arrangements, type Cell } from "@/lib/smart";
 import { Saver, type SaveStatus } from "@/lib/saver";
 import type { Photo, Photos, PlanEvent } from "@/lib/types";
 
@@ -102,6 +106,12 @@ export function BookPage() {
   const [snap, setSnap] = useSnapSetting();
   const [swapping, setSwapping] = useState<Item | null>(null);
   const [addingBg, setAddingBg] = useState<Page | null>(null);
+  // notes: the drawer, and a note just added (its field gets the focus)
+  const { notes, save: saveNote } = useNotes();
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [freshNote, setFreshNote] = useState<string | null>(null);
+  // which smart layout each page is on (by page key), to click through them
+  const [smartAt, setSmartAt] = useState<Record<string, number>>({});
   // the page (key) whose mesh points are being dragged
   const [meshPoints, setMeshPoints] = useState<string | null>(null);
   const edits = useMemo(() => parseEdits(remoteEdits), [remoteEdits]);
@@ -192,10 +202,11 @@ export function BookPage() {
       return updateElement(acc, i.key, i.slot, { z });
     }, edits));
   // colours that suit the visible pages: the tones of their photos
-  const tones = [...new Set((current?.pages ?? []).flatMap(({ page }) => (page?.elements ?? []).flatMap((e) => {
-    const t = e.type === "photo" ? year.data?.photos.get(e.id)?.tone : undefined;
-    return t ? [t] : [];
-  })))].slice(0, 8);
+  const pagePhotoUrls = [...new Set((current?.pages ?? []).flatMap(({ page }) => (page?.elements ?? []).flatMap((e) => {
+    const photo = e.type === "photo" ? year.data?.photos.get(e.id) : undefined;
+    return photo ? [thumbUrl(photo)] : [];
+  })))];
+  const tones = usePalette(pagePhotoUrls);
 
   // the page menu: colour and shape of the page's colour area, colour areas, background photo, layouts
   const pageItem = one?.kind === "page" ? one : null;
@@ -224,6 +235,55 @@ export function BookPage() {
     const pe = Object.fromEntries(Object.entries(edits[key] ?? {}).filter(([slot]) => !(slot.startsWith("cell") && Number(slot.slice(4)) >= cells.length)));
     commit({ ...edits, [key]: { ...pe, mesh: { mesh, cells } } });
   };
+  // smart layout: the photos (and month title) of a page in the next (or previous) arrangement
+  const smart = (page: Page, dir: 1 | -1) => {
+    const key = `${page.event.id}:${page.k}`;
+    const cells: Cell[] = page.elements.flatMap((e): Cell[] => {
+      if (e.type === "month") return [{ slot: e.slot ?? "month", aspect: e.w / e.h }];
+      if (e.type !== "photo" || e.bg || e.shape || e.cell !== undefined) return [];
+      const ph = year.data?.photos.get(e.id);
+      return ph ? [{ slot: e.slot ?? e.id, aspect: ph.w / ph.h }] : [];
+    });
+    const m = PAGE.margin;
+    const options = arrangements(cells, { x: m, y: m, w: PAGE.w - 2 * m, h: PAGE.h - 2 * m });
+    if (!options.length) return;
+    const at = (((smartAt[key] ?? -1) + dir) % options.length + options.length) % options.length;
+    // a mesh layout gives way to the arrangement
+    const base = Object.fromEntries(Object.entries(edits[key] ?? {}).filter(([slot]) => slot !== "mesh" && !slot.startsWith("cell")));
+    let next: Edits = { ...edits, [key]: base };
+    for (const [slot, box] of Object.entries(options[at])) next = updateElement(next, key, slot, { ...box, rot: 0 });
+    commit(next);
+    setSmartAt({ ...smartAt, [key]: at });
+  };
+  // what a note is about, for people (null: not in this book)
+  const pageLabel = (p: Page) => (p.cover ? p.event.title : `${p.event.title} · p. ${p.index + 1}`);
+  const labelOf = (n: Note): string | null => {
+    const p = book ? allPages(book).find((q) => `${q.event.id}:${q.k}` === n.page) : undefined;
+    if (!p) return null;
+    if (!n.slot) return pageLabel(p);
+    const el = p.elements.find((e) => e.slot === n.slot);
+    const what = el?.type === "photo" ? `foto ${el.id}` : el?.type === "caption" ? "tekst" : el?.type === "month" ? "maandtitel" : el?.type === "fill" ? "kleurvlak" : n.slot;
+    return `${pageLabel(p)} · ${what}`;
+  };
+  const noteTarget: NoteTarget | null = (() => {
+    if (one && one.kind !== "page") return { page: one.key, slot: one.slot, label: labelOf({ page: one.key, slot: one.slot } as Note) ?? "selectie" };
+    const p = one?.page ?? current?.pages.map(({ page }) => page).find((q) => q);
+    return p ? { page: `${p.event.id}:${p.k}`, label: pageLabel(p) } : null;
+  })();
+  const addNote = (t: NoteTarget | null = noteTarget) => {
+    if (!t) return;
+    const id = newNoteId();
+    saveNote(id, newNote(t.page, t.slot));
+    setFreshNote(id);
+    setNotesOpen(true);
+  };
+  const jumpTo = (n: Note) => {
+    const i = slides.findIndex((s) => s.pages.some(({ page }) => page && `${page.event.id}:${page.k}` === n.page));
+    if (i >= 0) go(i);
+    if (n.slot) setSelection(new Set([`${n.page}|${n.slot}`]));
+  };
+  const openNotes = Object.values(notes).filter((n) => n.status === "open");
+  const noted = new Set(openNotes.map((n) => (n.slot ? `${n.page}|${n.slot}` : n.page)));
   const togglePick = () => {
     if (!one || one.el.type !== "photo") return;
     const next = { ...(picks ?? {}) };
@@ -290,7 +350,30 @@ export function BookPage() {
   };
 
   const seg = (on: boolean) => `rounded-full px-3 py-1.5 text-sm font-medium ${on ? "bg-ink text-page" : "text-ink-2"}`;
-  const toolbar = (
+  const pick = "h-9 rounded-full border border-hair bg-surface px-2.5 text-sm";
+  const toolbar = !desktop ? (
+    <>
+      <select aria-label="Deel" value={bookIndex} onChange={(e) => go(0, Number(e.target.value))} className={pick}>
+        {books!.map((b, i) => <option key={b.name} value={i}>{b.name}</option>)}
+      </select>
+      <select aria-label="Modus" value={editing ? "edit" : "view"} className={pick}
+        onChange={(e) => {
+          const on = e.target.value === "edit";
+          setEditing(on);
+          if (!on) {
+            setSelection(new Set());
+            void saver.flush();
+          }
+        }}>
+        <option value="edit">Bewerken</option>
+        <option value="view">Bekijken</option>
+      </select>
+      <select aria-label="Weergave" value={perPage ? "page" : "spread"} onChange={(e) => { setChoice(e.target.value === "page"); go(0); }} className={pick}>
+        <option value="page">Pagina's</option>
+        <option value="spread">Spreads</option>
+      </select>
+    </>
+  ) : (
     <>
       <div className="flex rounded-full bg-surface p-1 ring-1 ring-hair">
         {books!.map((b, i) => (
@@ -314,6 +397,26 @@ export function BookPage() {
     <div className={`mx-auto px-3 pt-3 md:px-6 md:pt-5 ${editing ? "max-w-[1280px]" : ""}`}>
       <BookViewer
         presentation={!editing}
+        aside={(() => {
+          if (!editing) return undefined;
+          const pages = current.pages.map(({ page }) => (page && !page.cover ? page : null));
+          const btn = (label: string, onClick: () => void) => (
+            <button type="button" onClick={onClick} title={label} aria-label={label}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white shadow-md hover:brightness-110 md:h-11 md:w-11">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 3h8v10H3zM13 3h8v6h-8zM13 11h8v10h-8zM3 15h8v6H3z" />
+              </svg>
+            </button>
+          );
+          if (pages.length === 1) {
+            const p = pages[0];
+            return p ? { left: btn("Slimme indeling: vorige opmaak", () => smart(p, -1)), right: btn("Slimme indeling: volgende opmaak", () => smart(p, 1)) } : undefined;
+          }
+          return {
+            left: pages[0] ? btn("Slimme indeling: andere opmaak voor de linkerpagina", () => smart(pages[0]!, 1)) : undefined,
+            right: pages[1] ? btn("Slimme indeling: andere opmaak voor de rechterpagina", () => smart(pages[1]!, 1)) : undefined,
+          };
+        })()}
         slides={slides}
         index={slide}
         onIndex={go}
@@ -335,6 +438,8 @@ export function BookPage() {
                 const m = meshPoints ? meshOf(meshPoints) : undefined;
                 return at && m && meshPoints ? { key: meshPoints, dx: at.dx, mesh: m } : null;
               })()}
+              noted={noted}
+              onNotes={() => setNotesOpen(true)}
               bar={pageItem ? null : (
                 <SelectionBar
                   selected={selected}
@@ -346,6 +451,7 @@ export function BookPage() {
                     onFront: toFront,
                     onBack: toBack,
                     tones,
+                    onNote: () => addNote(),
                   }}
                 />
               )}
@@ -365,6 +471,8 @@ export function BookPage() {
           onSnap={setSnap}
           onAddText={addText}
           saving={saving}
+          notes={openNotes.filter((n) => labelOf(n) !== null).length}
+          onNotes={() => setNotesOpen(!notesOpen)}
           onResetPages={() => {
             const keys = current.pages.flatMap(({ page }) => (page ? [`${page.event.id}:${page.k}`] : []));
             const next = { ...edits };
@@ -379,7 +487,7 @@ export function BookPage() {
           {Object.keys(picks ?? {}).length} grote foto's gekozen · {Object.keys(edits).length} pagina's bewerkt. Tik op een foto om hem groot te bekijken.
         </p>
       )}
-      {editing && pageItem && pageItem.el.type === "fill" && (
+      {editing && !notesOpen && pageItem && pageItem.el.type === "fill" && (
         <PagePanel
           title={pageItem.page.cover ? pageItem.page.event.title : `${pageItem.page.event.title}${pageItem.page.k ? ` · pagina ${pageItem.page.k + 1}` : ""}`}
           color={pageItem.el.color}
@@ -414,8 +522,21 @@ export function BookPage() {
               if (m) setMeshKeepCells(pageItem.key, makeMesh(m.template, pageEdit?.mesh?.cells?.length ?? m.cells.length, `${pageItem.key}${Date.now()}`, { gap: m.gap, bleed: m.bleed }));
             },
             onMeshPoints: (on) => setMeshPoints(on ? pageItem.key : null),
+            onNote: () => addNote({ page: pageItem.key, label: pageLabel(pageItem.page) }),
             onClose: () => setSelection(new Set()),
           }}
+        />
+      )}
+      {editing && notesOpen && (
+        <NotesDrawer
+          notes={notes}
+          labelOf={labelOf}
+          target={noteTarget}
+          fresh={freshNote}
+          onAdd={() => addNote()}
+          onSave={saveNote}
+          onJump={jumpTo}
+          onClose={() => setNotesOpen(false)}
         />
       )}
       {addingBg && (

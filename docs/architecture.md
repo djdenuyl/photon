@@ -27,6 +27,7 @@ request. Everything except `/api/health` and the login routes needs a session, `
 - `state/{year}-answers` — answers to the open questions (`{data: {questionId: text}}`).
 - `state/{year}-picks` — the big photo chosen per event (`{data: {eventId: photoId}}`).
 - `state/{year}-edits` — editor changes per page (`{data: {"eventId:k": json}}`, see below).
+- `state/{year}-notes` — notes on pages and elements (`{data: {noteId: json}}`, see Notes).
 - `years/{year}` — years started with "+ Nieuw jaar" (`GET/POST /api/years`).
 
 The state maps are small maps, replaced as a whole or changed per key with PATCH (the editor
@@ -114,7 +115,29 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   not yet in the book). A mesh replaces the page's plain photos; month titles, captions and
   backgrounds stay. Cells (`cell0…`) can be swapped, zoomed and panned (drag inside), not moved;
   "Punten verschuiven" shows the mesh points to drag. Gap and bleed are settings of the mesh.
+- Cover letters: a letter's box is the ink of its glyph (HAPPY DONUTS metrics measured with canvas
+  measureText, in `GLYPHS`), so its photo can be panned right up to the letter's edges.
+- Background photos get a white veil (`veil`, default `BG_VEIL` 0.25, a slider in their toolbar),
+  as Albelli does, so they sit behind the photos on top. An added one sits at z −0.5: above the
+  page colour, below everything else.
+- Colour suggestions (`lib/palette.ts`): the colours that stand out in the page's photos (pixels
+  grouped by hue and lightness, scored by share and saturation), not their average tone.
+- Frames and text frames resize from their sides too (only the dragged sides snap).
+- Smart layout (`lib/smart.ts`): the blue buttons above the arrows put the page's photos (and its
+  month title) in another arrangement — every split into justified rows, justified columns, one
+  large photo beside a column — ranked by how little the photos are cropped, with a heavy penalty
+  when a photo's orientation would flip. Spread: one button per page; single page: previous/next.
 - Not editable yet: rotating month titles and captions, moving elements between pages.
+
+## Notes (`lib/notes.ts`, `components/NotesDrawer.tsx`, `scripts/notes.py`)
+
+A note is on a page (`page` = page key) or one element of it (`slot`), for yourself or for the
+agent (`to`), open or done, with the agent's `reply`. Added from the selection toolbar (the note
+icon near the end), the page menu, or the notes drawer (the note button with its count in the bar
+below the book); elements and pages with open notes show a yellow marker. Each note is saved on
+its own (PATCH). The agent works through them with `scripts/notes.py` (see AGENTS.md); its writes
+go to single keys, and the editor picks them up on its next save or refetch (state is stale after
+10 s and refetched on focus).
 
 ## Years (`/boek/:year`)
 

@@ -15,6 +15,7 @@ export interface PageActions {
   onBleed: (bleed: boolean) => void;
   onShuffle: () => void;
   onMeshPoints: (on: boolean) => void;
+  onNote: () => void;
   onClose: () => void;
 }
 
@@ -76,6 +77,9 @@ export function PagePanel({
       </Section>
       <Section title="Achtergrondfoto">
         <button type="button" className={btn()} onClick={a.onBgPhoto}>{hasBgPhoto ? "Achtergrondfoto bewerken" : "Achtergrondfoto kiezen"}</button>
+      </Section>
+      <Section title="Notitie">
+        <button type="button" className={btn()} onClick={a.onNote}>Notitie bij deze pagina</button>
       </Section>
       <Section title="Indeling (geavanceerd)">
         <p className="mb-2 text-xs text-ink-2">Foto's als vlakken met gedeelde punten: sleep een punt en alle foto's eromheen bewegen mee, de witte voeg blijft even breed.</p>

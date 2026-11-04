@@ -21,6 +21,7 @@ export function BookViewer({
   onStageClick,
   swipe = true,
   presentation = false,
+  aside,
 }: {
   slides: Slide[];
   index: number;
@@ -30,6 +31,8 @@ export function BookViewer({
   onStageClick?: (e: React.MouseEvent) => void;
   swipe?: boolean;
   presentation?: boolean;
+  /** Extra buttons above the previous / next arrows (the editor's smart layout). */
+  aside?: { left?: ReactNode; right?: ReactNode };
 }) {
   const current = slides[index];
   const root = useRef<HTMLDivElement>(null);
@@ -107,7 +110,10 @@ export function BookViewer({
       </div>
 
       <div className="mt-3 flex items-center justify-center gap-2 md:gap-4">
-        <button type="button" onClick={() => go(index - 1)} disabled={index === 0} aria-label="Vorige" className={side}>‹</button>
+        <div className="flex flex-col items-center gap-3">
+          {aside?.left}
+          <button type="button" onClick={() => go(index - 1)} disabled={index === 0} aria-label="Vorige" className={side}>‹</button>
+        </div>
         <div
           className="relative min-w-0 flex-1"
           style={{ maxWidth: `min(100%, calc((${room}) * ${current.aspect}))` }}
@@ -117,7 +123,10 @@ export function BookViewer({
           <div onClick={onStageClick} dangerouslySetInnerHTML={{ __html: current.html(true) }} />
           {overlay}
         </div>
-        <button type="button" onClick={() => go(index + 1)} disabled={index === slides.length - 1} aria-label="Volgende" className={side}>›</button>
+        <div className="flex flex-col items-center gap-3">
+          {aside?.right}
+          <button type="button" onClick={() => go(index + 1)} disabled={index === slides.length - 1} aria-label="Volgende" className={side}>›</button>
+        </div>
       </div>
       <p className={`mt-2 text-center text-sm ${full ? "text-white/50" : "text-ink-2"}`}>{current.label} · {current.title}</p>
       {!presentation && <Filmstrip slides={slides} active={index} onPick={go} />}

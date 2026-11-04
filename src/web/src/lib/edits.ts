@@ -22,6 +22,8 @@ export interface ElementEdit {
   hidden?: boolean;
   z?: number;
   border?: Border | null;
+  /** Background photos: opacity of a white veil over the photo. */
+  veil?: number;
   /** Captions and month titles. */
   text?: string;
   size?: number;
@@ -103,8 +105,8 @@ function baseElements(page: Page, pe: PageEdits | undefined): Element[] {
       const text = ed.text ?? "Tekst";
       base.push({ type: "caption", slot, z: 1000, text, ...captionFrame(text, 20, 20 + 1.7 * CAPTION_SIZE) });
     } else if (ed.add === "photo") {
-      // a background photo chosen in the page menu
-      base.push({ type: "photo", id: ed.photo ?? "", slot, bg: true, x: -B, y: -B, w: PAGE.w + 2 * B, h: PAGE.h + 2 * B, z: 0.1 });
+      // a background photo chosen in the page menu: above the page colour, below everything else
+      base.push({ type: "photo", id: ed.photo ?? "", slot, bg: true, x: -B, y: -B, w: PAGE.w + 2 * B, h: PAGE.h + 2 * B, z: -0.5 });
     } else if (ed.add === "fill") {
       base.push(fill(slot, "#f2c94c", [[60, 80], [150, 80], [150, 200], [60, 200]], 0.25));
     }
@@ -127,6 +129,7 @@ function applyPage(page: Page, pe: PageEdits | undefined): void {
       for (const k of keys) if (ed?.[k] !== undefined) o[k] = ed[k];
       if (ed?.focus) o.focus = ed.focus;
       if (ed?.border !== undefined) o.border = ed.border;
+      if (ed?.veil !== undefined) o.veil = ed.veil;
       out.push(o);
     } else if (e.type === "month") {
       const o = { ...e, z };

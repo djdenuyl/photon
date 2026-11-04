@@ -37,7 +37,7 @@ export function useYearData() {
   return useQuery({ queryKey: ["year", YEAR], queryFn: loadYear, staleTime: 10 * 60_000 });
 }
 
-export type StateKind = "answers" | "picks" | "edits";
+export type StateKind = "answers" | "picks" | "edits" | "notes";
 
 /** One entry in the year menu: an Albelli book (read-only) or a year made in Photon. */
 export interface YearEntry {
@@ -86,6 +86,8 @@ export function useStateMap(kind: StateKind) {
   return useQuery({
     queryKey: ["state", YEAR, kind],
     queryFn: () => fetchJson<StringMap>(`/api/state/${YEAR}/${kind}`),
+    // edits and notes can change elsewhere too (another tab, the agent): check again soon
+    staleTime: 10_000,
   });
 }
 

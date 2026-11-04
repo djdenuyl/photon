@@ -36,6 +36,8 @@ export interface PhotoElement extends Box, Editable {
   /** The white frame of the style guide (1.5 mm); `border` overrides it. */
   frame?: boolean;
   border?: Border | null;
+  /** Background photos: a white veil (opacity) so they sit behind the photos on top; default 0.25. */
+  veil?: number;
   shape?: Shape;
   /** A cell of a mesh layout (its index): shaped by the mesh, not moved on its own. */
   cell?: number;
@@ -71,6 +73,9 @@ export interface FillElement extends Box, Editable {
   color: string;
   pts: [number, number][];
 }
+
+/** The white veil over a background photo, as Albelli does (adjustable per photo). */
+export const BG_VEIL = 0.25;
 
 export const CAPTION_SIZE = 3.53;
 const LINE = 1.25;
@@ -492,9 +497,20 @@ function bbox(pts: string): Box {
 // Front: the metrics of the 2022 Inkscape original. HAPPY DONUTS 52.45, scaled x1.2025 / y0.8316,
 // left-aligned columns at x 21.5 / 76.6 / 131.6 and baselines at 66.2 + 65.75·row (before scaling),
 // the group 15.9 mm left and 11 mm up (ink from 7.5 to 271 mm, as on the 2022 cover). A solid
-// black letter sits 1.3/1.5 mm right/down under each photo letter. A letter's box is the area its
-// photo covers; the glyph scales with the box height.
-const LSX = 1.2025, LSY = 0.8316, LFS = 52.45, LBOX = { dx: -4, dy: -48, w: 68, h: 54 };
+// black letter sits 1.3/1.5 mm right/down under each photo letter. A letter's box is the ink of
+// its glyph (so the photo can be panned right up to the letter's edges); the glyph scales with
+// the box height.
+const LSX = 1.2025, LSY = 0.8316, LFS = 52.45;
+/** HAPPY DONUTS ink per glyph, in em: left of the origin, right of it, above and below the baseline
+ * (measured with canvas measureText). */
+const GLYPHS: Record<string, [number, number, number, number]> = {
+  "0": [0, 0.875, 0.828, 0.234], "1": [0, 0.406, 0.844, 0.203], "2": [0, 0.844, 0.844, 0.219], "3": [-0.016, 0.906, 0.828, 0.234],
+  "4": [0, 0.938, 0.844, 0.203], "5": [-0.031, 0.828, 0.828, 0.203], "6": [-0.078, 1.078, 0.828, 0.266], "7": [0, 0.781, 0.828, 0.203],
+  "8": [-0.109, 0.891, 0.844, 0.219], "9": [-0.141, 0.953, 0.828, 0.219], A: [0, 0.938, 0.859, 0.203], D: [0, 0.984, 0.844, 0.203],
+  E: [0, 0.969, 0.844, 0.203], H: [0, 0.984, 0.844, 0.219], J: [0, 1.016, 0.844, 0.203], N: [0, 0.969, 0.844, 0.203],
+  O: [0, 0.984, 0.844, 0.203], R: [0, 0.953, 0.844, 0.203], T: [0, 0.922, 0.859, 0.203],
+};
+const glyph = (ch: string) => GLYPHS[ch] ?? [0, 0.95, 0.844, 0.21];
 
 function coverEvent(id: string, title: string): PlanEvent {
   return { id, title, category: "omslag", tradition: null, start: "", end: "", photoDays: 0, photoIds: [], summary: "", heroCandidates: [], suggestedSpreads: 0 };
@@ -507,10 +523,14 @@ export function coverPages(cover: Cover, bi: number): { back: Page; front: Page 
     elements, index: -1, k: 0, style: null, background: "#777", cover: side,
   });
   const col = (i: number) => 21.5 + 55.05 * (i % 3), base = (i: number) => 66.2 + 65.75 * Math.floor(i / 3);
-  const letters = cover.letters.map((l, i): PhotoElement => ({
-    type: "photo", id: l.photo ?? "", slot: `letter${i}`, shape: { kind: "letter", ch: l.ch },
-    x: col(i) * LSX - 15.9 + LBOX.dx, y: base(i) * LSY - 11 + LBOX.dy, w: LBOX.w, h: LBOX.h,
-  }));
+  const letters = cover.letters.map((l, i): PhotoElement => {
+    const [left, right, up, down] = glyph(l.ch);
+    const tx = col(i) - 15.9 / LSX, ty = base(i) - 11 / LSY;
+    return {
+      type: "photo", id: l.photo ?? "", slot: `letter${i}`, shape: { kind: "letter", ch: l.ch },
+      x: (tx - left * LFS) * LSX, y: (ty - up * LFS) * LSY, w: (left + right) * LFS * LSX, h: (up + down) * LFS * LSY,
+    };
+  });
   const front: Element[] = [
     { type: "photo", id: cover.background ?? "", slot: "background", x: 0, y: 0, w: PAGE.w, h: PAGE.h, bg: true },
     ...letters,
@@ -532,10 +552,11 @@ const DONUTS = "'HAPPY DONUTS', 'Cooper Black', serif";
 /** The clip outline (and what goes under/over the photo) of a shaped photo. */
 function shapeParts(e: PhotoElement & { shape: Shape }): { clip: string; under: string; over: string } {
   if (e.shape.kind === "letter") {
-    const k = e.h / LBOX.h, ch = esc(e.shape.ch);
-    const glyph = (attrs: string, dx = 0, dy = 0) =>
-      `<text x="${(e.x - LBOX.dx * k + dx) / LSX}" y="${(e.y - LBOX.dy * k + dy) / LSY}" transform="scale(${LSX} ${LSY})" font-family="${DONUTS}" font-size="${LFS * k}" ${attrs}>${ch}</text>`;
-    return { clip: glyph(""), under: glyph('fill="#000"', 1.3 * k, 1.5 * k), over: "" };
+    const [left, , up, down] = glyph(e.shape.ch);
+    const k = e.h / ((up + down) * LFS * LSY), fs = LFS * k, ch = esc(e.shape.ch);
+    const text = (attrs: string, dx = 0, dy = 0) =>
+      `<text x="${(e.x + dx) / LSX + left * fs}" y="${(e.y + dy) / LSY + up * fs}" transform="scale(${LSX} ${LSY})" font-family="${DONUTS}" font-size="${fs}" ${attrs}>${ch}</text>`;
+    return { clip: text(""), under: text('fill="#000"', 1.3 * k, 1.5 * k), over: "" };
   }
   const pts = e.shape.pts.map(([u, v]) => `${e.x + u * e.w},${e.y + v * e.h}`).join(" ");
   return { clip: `<polygon points="${pts}"/>`, under: "", over: e.shape.tint ? `<polygon points="${pts}" fill="${e.shape.tint}" opacity=".2"/>` : "" };
@@ -556,8 +577,9 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
       parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     } else if (e.type === "photo") {
       const border = e.border !== undefined ? e.border : e.frame ? { w: 1.5, color: "#fff" } : null;
+      const veil = e.veil ?? (e.bg ? BG_VEIL : 0);
       const frame = border && border.w > 0 ? `<rect x="${e.x - border.w}" y="${e.y - border.w}" width="${e.w + 2 * border.w}" height="${e.h + 2 * border.w}" fill="${border.color}"/>` : "";
-      const inner = `${frame}<svg x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" viewBox="${e.x} ${e.y} ${e.w} ${e.h}" overflow="hidden" class="lay-photo${e.big ? " big" : ""}" data-photo="${e.id}" data-event="${p.event.id}">${placed(photos.get(e.id), e, url, e.zoom, e.focus)}</svg>`;
+      const inner = `${frame}<svg x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" viewBox="${e.x} ${e.y} ${e.w} ${e.h}" overflow="hidden" class="lay-photo${e.big ? " big" : ""}" data-photo="${e.id}" data-event="${p.event.id}">${placed(photos.get(e.id), e, url, e.zoom, e.focus)}${veil ? `<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" fill="#fff" opacity="${veil}"/>` : ""}</svg>`;
       parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     } else if (e.type === "month") {
       const size = Math.min(e.h * 1.25, (e.w / (0.85 * e.name.length)) * 1.25);

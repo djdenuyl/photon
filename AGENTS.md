@@ -35,6 +35,7 @@ npm run dev                              # vite dev server (proxies /api and /da
 uv run ruff check --fix . && uv run ruff format .
 uv run pyright && uv run pytest
 npx tsc -b && npm run lint               # frontend typecheck, lint
+npm test                                 # frontend tests (vitest; layout, edits, mesh, smart layout, colours)
 uv run python scripts/sync_data.py       # upload data/ (json, thumbs, display photos) to the bucket
 uv run python deploy.py                  # gcloud deploy (secrets via Secret Manager)
 ```
@@ -47,3 +48,19 @@ uv run python deploy.py                  # gcloud deploy (secrets via Secret Man
 - The layout engine stays pure; pages only wire it up. Style-guide rules live there with their numbers.
 - pyright strict / TS strict must stay clean.
 - When a design decision changes, update the matching doc in `/docs` in the same change.
+
+## Notes for the agent
+
+David leaves notes in the editor ("Voor de agent"): requests like "deel deze pagina anders in"
+or "andere foto voor de achterkant". To handle them:
+
+```sh
+uv run python scripts/notes.py list                        # open notes for the agent, with page context
+uv run python scripts/notes.py edits <page>                # the page's current editor changes
+uv run python scripts/notes.py set-edits <page> <file>     # write new ones (ElementEdit map, edits.ts)
+uv run python scripts/notes.py done <id> "what I did"      # answer and close the note
+```
+
+Change pages through their edits (never by rewriting the generated layout for one page), keep to
+the style guide, and say in the reply what you changed. If a request needs David's choice, answer
+with `reply` and leave the note open.

@@ -9,7 +9,7 @@ export type SaveStatus = "saved" | "pending" | "error";
 
 type Changes = Record<string, string | null>;
 
-function diff(base: StringMap, next: StringMap): Changes {
+export function diff(base: StringMap, next: StringMap): Changes {
   const out: Changes = {};
   for (const [k, v] of Object.entries(next)) if (base[k] !== v) out[k] = v;
   for (const k of Object.keys(base)) if (!(k in next)) out[k] = null;

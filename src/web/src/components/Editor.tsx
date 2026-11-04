@@ -6,7 +6,7 @@
 // committed on release.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { updateElement, type ElementEdit, type Edits } from "@/lib/edits";
-import { PAGE, placement, type Box, type Element, type Page } from "@/lib/layout";
+import { BG_VEIL, PAGE, placement, type Box, type Element, type Page } from "@/lib/layout";
 import { pointInPolygon, type Mesh, type Pt } from "@/lib/mesh";
 import type { SaveStatus } from "@/lib/saver";
 import type { Photos } from "@/lib/types";
@@ -126,6 +126,8 @@ export function EditorOverlay({
   snap,
   bar,
   mesh,
+  noted,
+  onNotes,
   onPreview,
   onCommit,
 }: {
@@ -140,6 +142,9 @@ export function EditorOverlay({
   bar: ReactNode;
   /** A mesh layout whose points are being moved (the page's key and offset). */
   mesh: { key: string; dx: number; mesh: Mesh } | null;
+  /** What has open notes: element selections (`key|slot`) and page keys. */
+  noted: Set<string>;
+  onNotes: () => void;
   onPreview: (e: Edits | null) => void;
   onCommit: (e: Edits) => void;
 }) {
@@ -309,8 +314,9 @@ export function EditorOverlay({
       const { box, dx: off } = d.target;
       const c = d.corner;
       if (snapping) {
-        take(snap1([off + (c.includes("e") ? box.x + box.w : box.x) + dx], lines.current.x), "x");
-        take(snap1([(c.includes("s") ? box.y + box.h : box.y) + dy], lines.current.y), "y");
+        // only the sides being dragged snap
+        if (/[ew]/.test(c)) take(snap1([off + (c.includes("e") ? box.x + box.w : box.x) + dx], lines.current.x), "x");
+        if (/[ns]/.test(c)) take(snap1([(c.includes("s") ? box.y + box.h : box.y) + dy], lines.current.y), "y");
       }
       let { x, y, w, h } = box;
       const min = d.target.kind === "caption" ? 3 : 8;
@@ -438,17 +444,17 @@ export function EditorOverlay({
               </span>
             )}
             {on && single && !bg && i.kind !== "shape" &&
-              ["nw", "ne", "sw", "se"].map((c) => (
+              ["nw", "ne", "sw", "se", "n", "s", "e", "w"].map((c) => (
                 <span
                   key={c}
                   data-handle={c}
-                  className="absolute h-3.5 w-3.5 rounded-full border-2 border-white bg-accent shadow"
+                  className={`absolute border-2 border-white bg-accent shadow ${c.length === 2 ? "h-3.5 w-3.5 rounded-full" : c === "n" || c === "s" ? "h-2.5 w-6 rounded-full" : "h-6 w-2.5 rounded-full"}`}
                   style={{
-                    left: c.includes("w") ? -7 : undefined,
-                    right: c.includes("e") ? -7 : undefined,
-                    top: c.includes("n") ? -7 : undefined,
-                    bottom: c.includes("s") ? -7 : undefined,
-                    cursor: c === "nw" || c === "se" ? "nwse-resize" : "nesw-resize",
+                    left: c.includes("w") ? (c.length === 2 ? -7 : -5) : c === "n" || c === "s" ? "calc(50% - 12px)" : undefined,
+                    right: c.includes("e") ? (c.length === 2 ? -7 : -5) : undefined,
+                    top: c.includes("n") ? (c.length === 2 ? -7 : -5) : c === "e" || c === "w" ? "calc(50% - 12px)" : undefined,
+                    bottom: c.includes("s") ? (c.length === 2 ? -7 : -5) : undefined,
+                    cursor: { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" }[c],
                   }}
                 />
               ))}
@@ -501,6 +507,17 @@ export function EditorOverlay({
             style={{ left: pct(mesh.dx + Math.min(Math.max(q[0], -2), PAGE.w + 2), width), top: pct(Math.min(Math.max(q[1], -2), PAGE.h + 2), PAGE.h) }} />
         ) : null,
       )}
+      {items.filter((i) => noted.has(i.sel) || (i.kind === "page" && noted.has(i.key))).map((i) => {
+        const page = i.kind === "page";
+        return (
+          <button key={`n${i.sel}`} type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onNotes}
+            title={page ? "Notitie bij deze pagina" : "Notitie bij dit element"} aria-label="Notitie"
+            className="absolute z-[5] flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-[#f2c94c] text-[10px] font-bold text-[#161513] shadow"
+            style={{ left: pct(page ? i.dx + PAGE.w - 6 : i.dx + Math.max(0, i.box.x) + 2, width), top: pct(page ? 6 : Math.max(0, i.box.y) + 2, PAGE.h) }}>
+            ✎
+          </button>
+        );
+      })}
       {guides.x.map((x) => (
         <div key={`x${x}`} className="pointer-events-none absolute inset-y-0 w-px bg-[#ff2e88]" style={{ left: pct(x, width) }} />
       ))}
@@ -519,7 +536,7 @@ export function EditorOverlay({
         />
       )}
       {barStyle && (
-        <div className="absolute z-10 w-max max-w-[min(34rem,calc(100vw-2rem))]" style={barStyle}
+        <div className="absolute z-10 w-max max-w-[calc(100vw-1rem)]" style={barStyle}
           onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
           {bar}
         </div>
@@ -542,7 +559,8 @@ const ICONS: Record<string, ReactNode> = {
   front: <><rect x="3" y="3" width="12" height="12" rx="1.5" /><rect x="9" y="9" width="12" height="12" rx="1.5" fill="currentColor" /></>,
   back: <><rect x="9" y="9" width="12" height="12" rx="1.5" /><rect x="3" y="3" width="12" height="12" rx="1.5" fill="currentColor" /></>,
   reset: <><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
-  hide: <path d="M9.9 4.2A10 10 0 0 1 12 4c7 0 10 8 10 8a13 13 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3 8 10 8a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20" />,
+  note: <><path d="M5 3h10l4 4v14H5z" /><path d="M14 3v5h5M8.5 12h7M8.5 16h5" /></>,
+  trash: <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />,
   undo: <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />,
   redo: <path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />,
   magnet: <path d="m6 15-4-4 6.8-6.8a7.8 7.8 0 0 1 11 11L13 22l-4-4 6.4-6.4a2.1 2.1 0 0 0-3-3L6 15M5 8l4 4M12 15l4 4" />,
@@ -566,10 +584,10 @@ function Icon({ name }: { name: keyof typeof ICONS }) {
 }
 
 /** An icon button; its label shows on hover (and is its accessible name). */
-export function IconBtn({ icon, label, onClick, active, disabled }: { icon: keyof typeof ICONS; label: string; onClick: () => void; active?: boolean; disabled?: boolean }) {
+export function IconBtn({ icon, label, onClick, active, disabled, danger }: { icon: keyof typeof ICONS; label: string; onClick: () => void; active?: boolean; disabled?: boolean; danger?: boolean }) {
   return (
     <button type="button" aria-label={label} aria-pressed={active} onClick={onClick} disabled={disabled}
-      className={`group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg disabled:opacity-35 ${active ? "bg-ink text-page" : "hover:bg-page"}`}>
+      className={`group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg disabled:opacity-35 ${active ? "bg-ink text-page" : danger ? "text-[#d92d20] hover:bg-[#d92d20]/10" : "hover:bg-page"}`}>
       <Icon name={icon} />
       <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-1.5 -translate-x-1/2 rounded-md bg-ink px-2 py-1 text-[11px] font-medium whitespace-nowrap text-page opacity-0 shadow transition-opacity delay-200 group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:hidden">
         {label}
@@ -580,25 +598,59 @@ export function IconBtn({ icon, label, onClick, active, disabled }: { icon: keyo
 
 const Sep = () => <span className="mx-0.5 h-6 w-px shrink-0 bg-hair" />;
 
-/** Caption text: wraps like the frame does; commits when it loses focus or on ctrl+Enter. */
+/** Caption text: saved on Enter (shift+Enter for a new line), when it loses focus, and when the
+ * selection goes away (the bar unmounts before a blur would fire). Escape undoes the typing. */
 function TextArea({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
   const [draft, setDraft] = useState(value);
-  const commit = () => draft !== value && onCommit(draft);
+  const latest = useRef({ draft, value, onCommit });
+  useEffect(() => {
+    latest.current = { draft, value, onCommit };
+  });
+  useEffect(
+    () => () => {
+      const { draft: d, value: v, onCommit: save } = latest.current;
+      if (d !== v) save(d);
+    },
+    [],
+  );
+  const commit = () => {
+    if (draft === value) return;
+    latest.current.value = draft; // don't save it again on unmount
+    onCommit(draft);
+  };
   return (
     <textarea value={draft} aria-label="Tekst" placeholder="Tekst" rows={Math.min(4, Math.max(1, draft.split("\n").length))}
       onChange={(e) => setDraft(e.target.value)} onBlur={commit}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) commit();
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          commit();
+        }
         if (e.key === "Escape") setDraft(value);
       }}
-      className="min-h-9 w-56 min-w-0 resize-y rounded-lg border border-hair bg-page px-2 py-1.5 text-sm leading-snug" />
+      className="min-h-9 w-40 min-w-0 resize-y rounded-lg border border-hair bg-page px-2 py-1.5 text-sm leading-snug" />
   );
 }
 
 /** A text field that commits on Enter or when it loses focus (one undo step per change). */
 function TextField({ value, onCommit, label }: { value: string; onCommit: (v: string) => void; label: string }) {
   const [draft, setDraft] = useState(value);
-  const commit = () => draft !== value && onCommit(draft);
+  const latest = useRef({ draft, value, onCommit });
+  useEffect(() => {
+    latest.current = { draft, value, onCommit };
+  });
+  useEffect(
+    () => () => {
+      const { draft: d, value: v, onCommit: save } = latest.current;
+      if (d !== v) save(d);
+    },
+    [],
+  );
+  const commit = () => {
+    if (draft === value) return;
+    latest.current.value = draft;
+    onCommit(draft);
+  };
   return (
     <input value={draft} aria-label={label} placeholder={label} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
       onKeyDown={(e) => {
@@ -626,6 +678,7 @@ export interface BarActions {
   onBack: () => void;
   /** Colours that suit the page (from its photos). */
   tones: string[];
+  onNote: () => void;
 }
 
 const SWATCHES = ["#ffffff", "#161513", "#f6f4ef", "#e9e2d0", "#f2c94c", "#f4a6a6", "#a8d5ba", "#9cc3e6", "#c3aed6", "#e07a5f"];
@@ -662,6 +715,21 @@ export function ColorChoice({ value, onChange, tones, auto }: { value: string; o
   );
 }
 
+/** The white veil over a background photo: drag, committed on release (one undo step). */
+function VeilSlider({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState(value);
+  return (
+    <label className="flex items-center gap-1.5 px-1.5 text-xs text-ink-2" title="Lichte sluier over de achtergrondfoto">
+      Sluier
+      <input type="range" min={0} max={0.8} step={0.05} value={draft} className="w-24"
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onPointerUp={() => draft !== value && onCommit(draft)}
+        onKeyUp={() => draft !== value && onCommit(draft)} />
+      <span className="w-8 tabular-nums">{Math.round(draft * 100)}%</span>
+    </label>
+  );
+}
+
 /** Floats next to the selection; what it offers depends on what is selected. */
 export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions }) {
   const [menu, setMenu] = useState<"border" | "color" | null>(null);
@@ -679,8 +747,8 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
   const colour = caption ? (caption.color ?? "#fff") : fillEl?.color;
   const pictured = every("photo", "shape", "bg", "month", "cell");
   return (
-    <div className="relative flex flex-wrap items-center justify-center gap-0.5 rounded-xl border border-hair bg-surface p-1 text-ink shadow-lg">
-      {!one && <span className="px-1.5 text-xs text-muted">{selected.length} geselecteerd</span>}
+    <div className="relative flex flex-wrap items-center justify-center gap-0.5 rounded-xl border border-hair bg-surface p-1 text-ink shadow-lg md:flex-nowrap">
+      {!one && <span className="px-1.5 text-xs whitespace-nowrap text-muted">{selected.length} geselecteerd</span>}
       {one && photoOf(one) && <span className="px-1.5 font-mono text-xs text-muted select-all" title="Fotonummer">{photoOf(one)}</span>}
       {caption && (
         <>
@@ -702,6 +770,12 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
       {month && (
         <>
           <TextField key={one!.sel + month.name} value={month.name} label="Maand" onCommit={(text) => a.apply(() => ({ text }))} />
+          <Sep />
+        </>
+      )}
+      {one?.kind === "bg" && one.el.type === "photo" && (
+        <>
+          <VeilSlider key={one.sel} value={one.el.veil ?? BG_VEIL} onCommit={(veil) => a.apply(() => ({ veil }))} />
           <Sep />
         </>
       )}
@@ -736,8 +810,9 @@ export function SelectionBar({ selected, a }: { selected: Item[]; a: BarActions 
         </>
       )}
       <Sep />
+      {one && <IconBtn icon="note" label="Notitie (voor jezelf of de agent)" onClick={a.onNote} />}
       <IconBtn icon="reset" label="Terug naar het voorstel" onClick={() => a.apply(() => null)} />
-      {!every("shape", "cell") && <IconBtn icon="hide" label="Van de pagina halen (Delete)" onClick={() => a.apply(() => ({ hidden: true }))} />}
+      {!every("shape", "cell") && <IconBtn icon="trash" danger label="Verwijderen (Delete)" onClick={() => a.apply(() => ({ hidden: true }))} />}
       {menu === "border" && framed && (
         <div className="absolute top-full right-0 z-20 mt-1.5 w-40 rounded-xl border border-hair bg-surface p-1 shadow-lg">
           {BORDERS.map((b) => (
@@ -769,6 +844,8 @@ export function EditBar({
   onAddText,
   saving,
   onResetPages,
+  notes,
+  onNotes,
 }: {
   onUndo: () => void;
   onRedo: () => void;
@@ -779,6 +856,9 @@ export function EditBar({
   onAddText: () => void;
   saving: SaveStatus;
   onResetPages: () => void;
+  /** Open notes in this book. */
+  notes: number;
+  onNotes: () => void;
 }) {
   return (
     <div data-keep-selection className="sticky bottom-[calc(env(safe-area-inset-bottom)+4rem)] z-20 mx-auto mt-3 flex w-fit max-w-full flex-wrap items-center gap-0.5 rounded-2xl border border-hair bg-surface p-1.5 shadow-lg md:bottom-4">
@@ -788,6 +868,12 @@ export function EditBar({
       <IconBtn icon="magnet" label={snap ? "Snappen staat aan (Alt = even uit)" : "Snappen staat uit"} active={snap} onClick={() => onSnap(!snap)} />
       <IconBtn icon="addText" label="Tekst toevoegen" onClick={onAddText} />
       <IconBtn icon="resetPage" label="Alle wijzigingen op deze pagina's terugdraaien" onClick={onResetPages} />
+      <span className="relative">
+        <IconBtn icon="note" label="Notities" onClick={onNotes} />
+        {notes > 0 && (
+          <span className="pointer-events-none absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#f2c94c] px-1 text-[10px] font-bold text-[#161513]">{notes}</span>
+        )}
+      </span>
       <Sep />
       <span className={`px-2 text-xs ${saving === "error" ? "text-orange" : "text-muted"}`} aria-live="polite">
         {saving === "saved" ? "Alles opgeslagen" : saving === "pending" ? "Opslaan…" : "Opslaan mislukt, opnieuw…"}

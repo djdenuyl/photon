@@ -15,7 +15,7 @@ from photon.api.auth import User
 
 router = APIRouter(prefix="/api/state", tags=["state"])
 
-Kind = Literal["answers", "picks", "edits"]
+Kind = Literal["answers", "picks", "edits", "notes"]
 
 
 @router.get("/{year}/{kind}")
