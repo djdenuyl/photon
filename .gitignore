@@ -17,10 +17,10 @@ __pycache__/
 node_modules/
 src/web/dist/
 
-# leftovers from the old editor on main
-components/
-handlers/
-utils/
+# leftovers from the old editor on main (root only: src/web/src/components is ours)
+/components/
+/handlers/
+/utils/
 
 # misc
 .DS_Store
