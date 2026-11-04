@@ -77,6 +77,8 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
 - The selection toolbar floats next to it, icons only with a label on hover. It offers what fits
   the selection: text field and size/colour (captions, month titles), swap, zoom, rotate, big photo,
   full page (to the bleed, toggles back), border (none / white / black), front/back, reset, hide.
+- The swap picker: search, scope (event / month / this book / year; cover parts, backgrounds and
+  month titles start at "Dit boek", grid photos at their event), people, close-up, sfeerbeeld.
 - Below the book: undo/redo, snapping, add text, reset these pages, save status.
 - Snapping (toggle, remembered per browser; Alt = off while held): 2 mm to page edges, margins and
   centre lines, and to other elements' edges, centres and edge + 5 mm gap; pink guides show the match.
