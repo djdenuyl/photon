@@ -18,14 +18,25 @@ const MAX_PER_PAGE = 8;
 const MONTH_TOKEN = "#month:";
 
 export interface Box { x: number; y: number; w: number; h: number }
-export interface PhotoElement extends Box {
+/** Editor bookkeeping on every element: its edit key and its stacking order. */
+interface Editable {
+  /** The edit key: set by the layout for cover parts, else the photo the layout put here. */
+  slot?: string;
+  /** Stacking order (higher is in front); the layout order unless edited. */
+  z?: number;
+}
+/** A photo clipped to a shape instead of its rectangle (the cover letters and shards). */
+export type Shape = { kind: "letter"; ch: string } | { kind: "poly"; pts: [number, number][]; tint: string };
+export interface Border { w: number; color: string }
+export interface PhotoElement extends Box, Editable {
   type: "photo";
   id: string;
   big?: boolean;
   bg?: boolean;
+  /** The white frame of the style guide (1.5 mm); `border` overrides it. */
   frame?: boolean;
-  /** Editor: the photo the layout put here (the edit key), when a swap replaced `id`. */
-  slot?: string;
+  border?: Border | null;
+  shape?: Shape;
   /** Editor: zoom inside the frame (1 = just covering it). */
   zoom?: number;
   /** Editor: focus point (fractions of the photo) kept in the middle of the frame. */
@@ -33,8 +44,24 @@ export interface PhotoElement extends Box {
   /** Editor: frame rotation in degrees. */
   rot?: number;
 }
-export interface MonthElement extends Box { type: "month"; name: string; photo: string | null }
-export interface CaptionElement { type: "caption"; text: string; x: number; y: number }
+export interface MonthElement extends Box, Editable {
+  type: "month";
+  name: string;
+  photo: string | null;
+  zoom?: number;
+  focus?: [number, number];
+}
+export interface CaptionElement extends Editable {
+  type: "caption";
+  text: string;
+  /** Top-left (or top-right with anchor "end"); the baseline is 1.7 × size lower. */
+  x: number;
+  y: number;
+  size?: number;
+  color?: string;
+  font?: "donuts";
+  anchor?: "end";
+}
 export type Element = PhotoElement | MonthElement | CaptionElement;
 
 export interface Page {
@@ -45,6 +72,7 @@ export interface Page {
   k: number;
   style: Style | null;
   background?: string;
+  cover?: "front" | "back";
 }
 
 export interface Spread { label: string; left: Page | null; right: Page | null }
@@ -63,6 +91,8 @@ export interface Book {
   spreads: Spread[];
   index: number;
   cover: Cover;
+  /** The cover as two editable pages. */
+  covers: { back: Page; front: Page };
 }
 
 const aspect = (p: Photo | undefined): number => (p ? p.w / p.h : 1.33);
@@ -327,7 +357,8 @@ export function buildBooks(plan: Plan, photos: Photos, picks: StringMap = {}): B
     }
     const spreads: Spread[] = [{ label: "1", left: null, right: pages[0] ?? null }];
     for (let i = 1; i < pages.length; i += 2) spreads.push({ label: `${i + 1} / ${i + 2}`, left: pages[i], right: pages[i + 1] ?? null });
-    return { name: part.name, title: `Het Jaar Rond 2025 - ${part.name.toLowerCase()}`, pages, spreads, index: bi, cover: buildCover(part.events, bi, photos) };
+    const cover = buildCover(part.events, bi, photos);
+    return { name: part.name, title: `Het Jaar Rond 2025 - ${part.name.toLowerCase()}`, pages, spreads, index: bi, cover, covers: coverPages(cover, bi) };
   });
 }
 
@@ -438,34 +469,56 @@ function bbox(pts: string): Box {
   return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
 }
 
-/** Back cover: four photo shards, each with a 20% pastel tint. */
-export function coverBack(cover: Cover, photos: Photos, url: UrlFor): string {
-  const id = `cb${uid()}`;
-  const shards = SHARDS.map((pts, i) => `<clipPath id="${id}s${i}"><polygon points="${pts}"/></clipPath>
-    <g clip-path="url(#${id}s${i})" class="lay-photo" data-photo="${cover.shards[i] ?? ""}">${placed(photos.get(cover.shards[i]), bbox(pts), url)}<polygon points="${pts}" fill="${TINTS[i]}" opacity=".2"/></g>`).join("");
-  return `<rect width="${PAGE.w}" height="${PAGE.h}" fill="#777"/>${shards}`;
+// Front: the metrics of the 2022 Inkscape original. HAPPY DONUTS 52.45, scaled x1.2025 / y0.8316,
+// left-aligned columns at x 21.5 / 76.6 / 131.6 and baselines at 66.2 + 65.75·row (before scaling),
+// the group 15.9 mm left and 11 mm up (ink from 7.5 to 271 mm, as on the 2022 cover). A solid
+// black letter sits 1.3/1.5 mm right/down under each photo letter. A letter's box is the area its
+// photo covers; the glyph scales with the box height.
+const LSX = 1.2025, LSY = 0.8316, LFS = 52.45, LBOX = { dx: -4, dy: -48, w: 68, h: 54 };
+
+function coverEvent(id: string, title: string): PlanEvent {
+  return { id, title, category: "omslag", tradition: null, start: "", end: "", photoDays: 0, photoIds: [], summary: "", heroCandidates: [], suggestedSpreads: 0 };
 }
 
-/**
- * Front cover with the metrics of the 2022 Inkscape original: HAPPY DONUTS 52.45, scaled
- * x1.2025 / y0.8316, left-aligned columns at x 21.5 / 76.6 / 131.6 and baselines at
- * y 66.2 + 65.75·row (before scaling), the whole group 15.9 mm to the left. A solid black letter
- * sits under the photo letter, which is shifted 1.3 mm up and left: a black edge bottom-right.
- */
-export function coverFront(cover: Cover, photos: Photos, url: UrlFor): string {
-  const id = `cf${uid()}`;
-  const SX = 1.2025, SY = 0.8316, FS = 52.45, SHIFT = -15.9;
+/** The cover as two pages of ordinary (editable) elements. */
+export function coverPages(cover: Cover, bi: number): { back: Page; front: Page } {
+  const page = (side: "front" | "back", elements: Element[]): Page => ({
+    event: coverEvent(`omslag${bi + 1}-${side}`, side === "front" ? "Voorkant" : "Achterkant"),
+    elements, index: -1, k: 0, style: null, background: "#777", cover: side,
+  });
   const col = (i: number) => 21.5 + 55.05 * (i % 3), base = (i: number) => 66.2 + 65.75 * Math.floor(i / 3);
-  const glyph = (ch: string, i: number, attrs: string, dx = 0, dy = 0) =>
-    `<text x="${col(i) + (dx + SHIFT) / SX}" y="${base(i) + dy / SY}" transform="scale(${SX} ${SY})" font-family="'HAPPY DONUTS', 'Cooper Black', serif" font-size="${FS}" ${attrs}>${ch}</text>`;
-  const shadows = cover.letters.map((l, i) => glyph(l.ch, i, 'fill="#000"', 1.3, 1.5)).join("");
-  const letters = cover.letters.map((l, i) => {
-    const x = col(i) * SX + SHIFT, y = base(i) * SY;
-    return `<clipPath id="${id}l${i}">${glyph(l.ch, i, "")}</clipPath>
-      <g clip-path="url(#${id}l${i})" class="lay-photo" data-photo="${l.photo ?? ""}">${placed(photos.get(l.photo ?? ""), { x: x - 4, y: y - 48, w: 68, h: 54 }, url)}</g>`;
-  }).join("");
-  return `<rect width="${PAGE.w}" height="${PAGE.h}" fill="#777"/>${placed(photos.get(cover.background ?? ""), { x: 0, y: 0, w: PAGE.w, h: PAGE.h }, url)}${shadows}${letters}
-    <text x="196" y="270" text-anchor="end" font-family="'HAPPY DONUTS', 'Cooper Black', serif" font-size="7.3" fill="#fff">${cover.label}</text>`;
+  const letters = cover.letters.map((l, i): PhotoElement => ({
+    type: "photo", id: l.photo ?? "", slot: `letter${i}`, shape: { kind: "letter", ch: l.ch },
+    x: col(i) * LSX - 15.9 + LBOX.dx, y: base(i) * LSY - 11 + LBOX.dy, w: LBOX.w, h: LBOX.h,
+  }));
+  const front: Element[] = [
+    { type: "photo", id: cover.background ?? "", slot: "background", x: 0, y: 0, w: PAGE.w, h: PAGE.h, bg: true },
+    ...letters,
+    { type: "caption", text: cover.label, slot: "label", x: 196, y: 270 - 1.7 * 7.3, size: 7.3, color: "#000", font: "donuts", anchor: "end" },
+  ];
+  const back = SHARDS.map((pts, i): PhotoElement => {
+    const xy = pts.split(" ").map((q) => q.split(",").map(Number));
+    const box = bbox(pts);
+    return {
+      type: "photo", id: cover.shards[i] ?? "", slot: `shard${i}`, ...box,
+      shape: { kind: "poly", tint: TINTS[i], pts: xy.map(([x, y]): [number, number] => [(x - box.x) / box.w, (y - box.y) / box.h]) },
+    };
+  });
+  return { back: page("back", back), front: page("front", front) };
+}
+
+const DONUTS = "'HAPPY DONUTS', 'Cooper Black', serif";
+
+/** The clip outline (and what goes under/over the photo) of a shaped photo. */
+function shapeParts(e: PhotoElement & { shape: Shape }): { clip: string; under: string; over: string } {
+  if (e.shape.kind === "letter") {
+    const k = e.h / LBOX.h, ch = esc(e.shape.ch);
+    const glyph = (attrs: string, dx = 0, dy = 0) =>
+      `<text x="${(e.x - LBOX.dx * k + dx) / LSX}" y="${(e.y - LBOX.dy * k + dy) / LSY}" transform="scale(${LSX} ${LSY})" font-family="${DONUTS}" font-size="${LFS * k}" ${attrs}>${ch}</text>`;
+    return { clip: glyph(""), under: glyph('fill="#000"', 1.3 * k, 1.5 * k), over: "" };
+  }
+  const pts = e.shape.pts.map(([u, v]) => `${e.x + u * e.w},${e.y + v * e.h}`).join(" ");
+  return { clip: `<polygon points="${pts}"/>`, under: "", over: `<polygon points="${pts}" fill="${e.shape.tint}" opacity=".2"/>` };
 }
 
 /** The inside of one page (210 × 280 user units, clipped by the caller). */
@@ -473,16 +526,26 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
   const id = `pg${uid()}`;
   const parts = [`<rect x="-5" y="-5" width="${PAGE.w + 10}" height="${PAGE.h + 10}" fill="${p.background ?? "#fff"}"/>`];
   for (const e of p.elements) {
-    if (e.type === "photo") {
-      const frame = e.frame ? `<rect x="${e.x - 1.5}" y="${e.y - 1.5}" width="${e.w + 3}" height="${e.h + 3}" fill="#fff"/>` : "";
+    if (e.type === "photo" && e.shape) {
+      const { clip, under, over } = shapeParts({ ...e, shape: e.shape });
+      const cid = `${id}c${parts.length}`;
+      const inner = `${under}<clipPath id="${cid}">${clip}</clipPath><g clip-path="url(#${cid})" class="lay-photo" data-photo="${e.id}">${placed(photos.get(e.id), e, url, e.zoom, e.focus)}${over}</g>`;
+      parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
+    } else if (e.type === "photo") {
+      const border = e.border !== undefined ? e.border : e.frame ? { w: 1.5, color: "#fff" } : null;
+      const frame = border && border.w > 0 ? `<rect x="${e.x - border.w}" y="${e.y - border.w}" width="${e.w + 2 * border.w}" height="${e.h + 2 * border.w}" fill="${border.color}"/>` : "";
       const inner = `${frame}<svg x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" viewBox="${e.x} ${e.y} ${e.w} ${e.h}" overflow="hidden" class="lay-photo${e.big ? " big" : ""}" data-photo="${e.id}" data-event="${p.event.id}">${placed(photos.get(e.id), e, url, e.zoom, e.focus)}</svg>`;
       parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     } else if (e.type === "month") {
       const size = Math.min(e.h * 1.25, (e.w / (0.85 * e.name.length)) * 1.25);
       const t = `<text x="${e.x + e.w / 2}" y="${e.y + e.h / 2 + size * 0.35}" text-anchor="middle" font-family="'League Spartan', sans-serif" font-weight="900" font-size="${size}" textLength="${e.w}" lengthAdjust="spacingAndGlyphs">${esc(e.name.toUpperCase())}</text>`;
-      parts.push(`<clipPath id="${id}m">${t}</clipPath><g clip-path="url(#${id}m)">${placed(photos.get(e.photo ?? ""), e, url)}</g>`);
+      const cid = `${id}m${parts.length}`;
+      parts.push(`<clipPath id="${cid}">${t}</clipPath><g clip-path="url(#${cid})">${placed(photos.get(e.photo ?? ""), e, url, e.zoom, e.focus)}</g>`);
     } else {
-      parts.push(`<text x="${e.x}" y="${e.y + 6}" font-family="Open Sans, sans-serif" font-size="3.53" fill="#fff" style="paint-order:stroke" stroke="rgba(0,0,0,.35)" stroke-width=".4">${esc(e.text)}</text>`);
+      const size = e.size ?? 3.53, color = e.color ?? "#fff";
+      const font = e.font === "donuts" ? DONUTS : "Open Sans, sans-serif";
+      const halo = e.font ? "" : ` style="paint-order:stroke" stroke="${color === "#fff" ? "rgba(0,0,0,.35)" : "rgba(255,255,255,.35)"}" stroke-width="${size * 0.11}"`;
+      parts.push(`<text x="${e.x}" y="${e.y + size * 1.7}"${e.anchor ? ` text-anchor="${e.anchor}"` : ""} font-family="${font}" font-size="${size}" fill="${color}"${halo}>${esc(e.text)}</text>`);
     }
   }
   return parts.join("");

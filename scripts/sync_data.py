@@ -27,7 +27,7 @@ FILES = [
     "albelli/books.json", "albelli/stats.json", "albelli/photos.json", "albelli/context.json",
     "albelli/graphics.json",
     f"{YEAR}/plan.json", f"{YEAR}/index.json", f"{YEAR}/labels.json", f"{YEAR}/tones.json",
-    f"{YEAR}/duplicates.json",
+    f"{YEAR}/duplicates.json", "fonts/happy-donuts.otf",
 ]  # fmt: skip
 FOLDERS = ["albelli/thumbs/300", "albelli/graphics-web", f"{YEAR}/thumbs", f"{YEAR}/display"]
 

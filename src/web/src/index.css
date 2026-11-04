@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* The cover letters (licensed font, served privately with the photos). */
+@font-face {
+  font-family: "HAPPY DONUTS";
+  src: url("/data/fonts/happy-donuts.otf") format("opentype");
+  font-display: swap;
+}
+
 /* Same palette as the style guide: warm paper, near-black ink, the guide's blue and orange.
    Light and dark through CSS variables; the theme sits on <html data-theme>, shared with the
    static style guide (localStorage "theme"). */

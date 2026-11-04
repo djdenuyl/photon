@@ -1,15 +1,17 @@
-// This year's book: the generated layout with your picks and edits applied. Leaf through it
-// (spreads on desktop, pages on a phone) or switch on the editor.
+// This year's book: the generated layout with your picks and edits applied, cover included.
+// Opens in the editor; "Bekijken" leafs through it without the editing controls. Every change is
+// saved as you go (see lib/saver.ts), there is nothing to save by hand.
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BookViewer, type Slide } from "@/components/BookViewer";
-import { EditBar, EditorOverlay, itemsFor, PhotoBar, PhotoPicker, type Item } from "@/components/Editor";
+import { EditBar, EditorOverlay, itemsFor, photoOf, SelectionBar, type Item } from "@/components/Editor";
+import { PhotoPicker } from "@/components/PhotoPicker";
 import { PhotoSheet } from "@/components/PhotoSheet";
 import { useIsDesktop } from "@/components/Shell";
 import { displayUrl, thumbUrl, useSaveState, useStateMap, useYearData, YEAR } from "@/lib/data";
-import { applyEdits, parseEdits, serializeEdits, swapPhoto, updateElement, type Edits } from "@/lib/edits";
-import { buildBooks, coverBack, coverFront, PAGE, pageBody, renderPage, renderSpread, type Book, type Page } from "@/lib/layout";
+import { applyEdits, parseEdits, serializeEdits, swapPhoto, updateElement, type ElementEdit, type Edits } from "@/lib/edits";
+import { buildBooks, PAGE, pageBody, renderPage, renderSpread, type Book, type Page } from "@/lib/layout";
 import { Saver, type SaveStatus } from "@/lib/saver";
 import type { Photo, Photos, PlanEvent } from "@/lib/types";
 
@@ -21,10 +23,11 @@ interface BookSlide extends Slide {
 function slidesFor(book: Book, photos: Photos, perPage: boolean): BookSlide[] {
   const url = (big: boolean) => (big ? displayUrl : thumbUrl);
   const body = (p: Page | null, big: boolean) => (p ? pageBody(p, photos, url(big)) : null);
+  const { back, front } = book.covers;
   if (perPage) {
     return [
-      { label: "Achterkant", title: "Omslag", aspect: 0.75, pages: [], width: PAGE.w, html: (big) => renderPage(coverBack(book.cover, photos, url(big))) },
-      { label: "Voorkant", title: "Omslag", aspect: 0.75, pages: [], width: PAGE.w, html: (big) => renderPage(coverFront(book.cover, photos, url(big))) },
+      { label: "Achterkant", title: "Omslag", aspect: 0.75, pages: [{ page: back, dx: 0 }], width: PAGE.w, html: (big) => renderPage(body(back, big)) },
+      { label: "Voorkant", title: "Omslag", aspect: 0.75, pages: [{ page: front, dx: 0 }], width: PAGE.w, html: (big) => renderPage(body(front, big)) },
       ...book.pages.map((p, i) => ({
         label: `Pagina ${i + 1}`, title: p.event.title, aspect: 0.75, pages: [{ page: p, dx: 0 }], width: PAGE.w,
         html: (big: boolean) => renderPage(body(p, big)),
@@ -33,8 +36,9 @@ function slidesFor(book: Book, photos: Photos, perPage: boolean): BookSlide[] {
   }
   return [
     {
-      label: "Omslag", title: "achterkant · voorkant", aspect: 1.5, pages: [], width: 2 * PAGE.w,
-      html: (big) => renderSpread(coverBack(book.cover, photos, url(big)), coverFront(book.cover, photos, url(big))),
+      label: "Omslag", title: "achterkant · voorkant", aspect: 1.5, width: 2 * PAGE.w,
+      pages: [{ page: back, dx: 0 }, { page: front, dx: PAGE.w }],
+      html: (big) => renderSpread(body(back, big), body(front, big)),
     },
     ...book.spreads.map((sp) => ({
       label: sp.label,
@@ -45,6 +49,25 @@ function slidesFor(book: Book, photos: Photos, perPage: boolean): BookSlide[] {
       html: (big: boolean) => renderSpread(body(sp.left, big), body(sp.right, big)),
     })),
   ];
+}
+
+function useSnapSetting(): [boolean, (on: boolean) => void] {
+  const [snap, setSnap] = useState(() => {
+    try {
+      return localStorage.getItem("photon-snap") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const set = (on: boolean) => {
+    setSnap(on);
+    try {
+      localStorage.setItem("photon-snap", on ? "on" : "off");
+    } catch {
+      // private mode: the setting just isn't remembered
+    }
+  };
+  return [snap, set];
 }
 
 export function BookPage() {
@@ -62,30 +85,16 @@ export function BookPage() {
   const perPage = choice ?? !desktop;
   const [open, setOpen] = useState<{ photo: Photo; event: PlanEvent | null } | null>(null);
 
-  // editor state: local edits (until the server copy is replaced), undo/redo, live preview
-  const [editing, setEditing] = useState(false);
+  // editor state: local edits (ahead of the server), undo/redo, live preview while dragging
+  const [editing, setEditing] = useState(true);
   const [local, setLocal] = useState<Edits | null>(null);
   const [past, setPast] = useState<Edits[]>([]);
   const [future, setFuture] = useState<Edits[]>([]);
   const [preview, setPreview] = useState<Edits | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set());
-  const [snap, setSnapState] = useState(() => {
-    try {
-      return localStorage.getItem("photon-snap") !== "off";
-    } catch {
-      return true;
-    }
-  });
-  const setSnap = (on: boolean) => {
-    setSnapState(on);
-    try {
-      localStorage.setItem("photon-snap", on ? "on" : "off");
-    } catch {
-      // private mode: the toggle just isn't remembered
-    }
-  };
+  const [snap, setSnap] = useSnapSetting();
   const [swapping, setSwapping] = useState<Item | null>(null);
-  const edits = local ?? parseEdits(remoteEdits);
+  const edits = useMemo(() => local ?? parseEdits(remoteEdits), [local, remoteEdits]);
   const shown = preview ?? edits;
 
   const books = useMemo(
@@ -136,7 +145,7 @@ export function BookPage() {
     };
   }, [saver]);
 
-  // a click anywhere outside the photos (and the editor's own controls) clears the selection
+  // a click anywhere outside the book's elements (and the editor's own controls) clears the selection
   useEffect(() => {
     if (!editing) return;
     const onDown = (e: PointerEvent) => {
@@ -149,8 +158,37 @@ export function BookPage() {
   const current = slides[slide];
   const items = current && editing ? itemsFor(current.pages) : [];
   const selected = items.filter((i) => selection.has(i.sel));
-  const apply = (f: (i: Item) => Parameters<typeof updateElement>[3]) =>
+  const one = selected.length === 1 ? selected[0] : null;
+  const apply = (f: (i: Item) => ElementEdit | null) =>
     commit(selected.reduce((acc, i) => updateElement(acc, i.key, i.slot, f(i)), edits));
+
+  // stacking: in front of everything on the page, or behind everything but the background
+  const zs = (i: Item) => i.page.elements.map((e) => ({ z: e.z ?? 0, bg: e.type === "photo" && !!e.bg, slot: e.slot }));
+  const toFront = () =>
+    commit(selected.reduce((acc, i, n) => updateElement(acc, i.key, i.slot, { z: Math.max(...zs(i).map((e) => e.z)) + 1 + n }), edits));
+  const toBack = () =>
+    commit(selected.reduce((acc, i, n) => {
+      const all = zs(i);
+      const floor = Math.max(-1, ...all.filter((e) => e.bg).map((e) => e.z));
+      const lowest = Math.min(1e6, ...all.filter((e) => !e.bg && e.slot !== i.slot).map((e) => e.z));
+      const z = lowest === 1e6 ? floor + 1 : floor + ((lowest - floor) * (n + 1)) / (selected.length + 1);
+      return updateElement(acc, i.key, i.slot, { z });
+    }, edits));
+  const togglePick = () => {
+    if (!one || one.el.type !== "photo") return;
+    const next = { ...(picks ?? {}) };
+    if (next[one.page.event.id] === one.el.id) delete next[one.page.event.id];
+    else next[one.page.event.id] = one.el.id;
+    savePicks.mutate(next);
+  };
+  const addText = () => {
+    const target = current ? [...current.pages].reverse().find((p) => p.page) : undefined;
+    if (!target?.page) return;
+    const key = `${target.page.event.id}:${target.page.k}`;
+    const slot = `add${Date.now().toString(36)}`;
+    commit(updateElement(edits, key, slot, { add: "caption", text: "Tekst", x: PAGE.w / 2 - 10, y: PAGE.h / 2 }));
+    setSelection(new Set([`${key}|${slot}`]));
+  };
 
   useEffect(() => {
     if (!editing) return;
@@ -174,10 +212,11 @@ export function BookPage() {
         e.preventDefault();
         const step = e.shiftKey ? 5 : 1;
         const [dx, dy] = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0];
-        apply((i) => ({ x: i.el.x + dx, y: i.el.y + dy }));
-      } else if (e.key.startsWith("Arrow") && !selected.length) {
-        if (e.key === "ArrowRight") go(slide + 1);
-        if (e.key === "ArrowLeft") go(slide - 1);
+        apply((i) => (i.kind === "bg" ? {} : { x: i.el.x + dx, y: i.el.y + dy }));
+      } else if (e.key === "ArrowRight") {
+        go(slide + 1);
+      } else if (e.key === "ArrowLeft") {
+        go(slide - 1);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -189,14 +228,6 @@ export function BookPage() {
   const data = year.data;
   const photosPlaced = book.pages.reduce((n, p) => n + p.elements.filter((e) => e.type === "photo").length, 0);
   const placedIds = new Set(books!.flatMap((b) => b.pages.flatMap((p) => p.elements.flatMap((e) => (e.type === "photo" ? [e.id] : [])))));
-  const one = selected.length === 1 ? selected[0] : null;
-  const togglePick = () => {
-    if (!one) return;
-    const next = { ...(picks ?? {}) };
-    if (next[one.page.event.id] === one.el.id) delete next[one.page.event.id];
-    else next[one.page.event.id] = one.el.id;
-    savePicks.mutate(next);
-  };
 
   const onStageClick = (e: React.MouseEvent) => {
     if (editing) return;
@@ -207,23 +238,24 @@ export function BookPage() {
     setOpen({ photo, event: data.plan.events.find((ev) => ev.id === el?.dataset.event) ?? null });
   };
 
+  const seg = (on: boolean) => `rounded-full px-3 py-1.5 text-sm font-medium ${on ? "bg-ink text-page" : "text-ink-2"}`;
   const toolbar = (
     <>
       <div className="flex rounded-full bg-surface p-1 ring-1 ring-hair">
         {books!.map((b, i) => (
-          <button key={b.name} type="button" aria-pressed={i === bookIndex} onClick={() => go(0, i)}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium ${i === bookIndex ? "bg-ink text-page" : "text-ink-2"}`}>
+          <button key={b.name} type="button" aria-pressed={i === bookIndex} onClick={() => go(0, i)} className={seg(i === bookIndex)}>
             {b.name} <span className="opacity-70">· {b.pages.length} p.</span>
           </button>
         ))}
       </div>
-      <button type="button" onClick={() => { setChoice(!perPage); go(0); }} className="h-10 rounded-full border border-hair bg-surface px-3 text-sm">
-        {perPage ? "Spreads" : "Pagina's"}
-      </button>
-      <button type="button" onClick={() => { setEditing(!editing); setSelection(new Set()); }}
-        className={`h-10 rounded-full px-4 text-sm font-semibold ${editing ? "bg-accent text-white" : "border border-hair bg-surface"}`}>
-        {editing ? "Bewerken aan" : "Bewerken"}
-      </button>
+      <div className="flex rounded-full bg-surface p-1 ring-1 ring-hair" role="group" aria-label="Weergave">
+        <button type="button" aria-pressed={!perPage} onClick={() => { setChoice(false); go(0); }} className={seg(!perPage)}>Spreads</button>
+        <button type="button" aria-pressed={perPage} onClick={() => { setChoice(true); go(0); }} className={seg(perPage)}>Pagina's</button>
+      </div>
+      <div className="flex rounded-full bg-surface p-1 ring-1 ring-hair" role="group" aria-label="Modus">
+        <button type="button" aria-pressed={editing} onClick={() => setEditing(true)} className={seg(editing)}>Bewerken</button>
+        <button type="button" aria-pressed={!editing} onClick={() => { setEditing(false); setSelection(new Set()); void saver.flush(); }} className={seg(!editing)}>Bekijken</button>
+      </div>
     </>
   );
 
@@ -237,7 +269,7 @@ export function BookPage() {
         swipe={!editing}
         onStageClick={onStageClick}
         overlay={
-          editing && current.pages.length ? (
+          editing ? (
             <EditorOverlay
               items={items}
               width={current.width}
@@ -247,12 +279,16 @@ export function BookPage() {
               onSelect={setSelection}
               snap={snap}
               bar={
-                <PhotoBar
+                <SelectionBar
                   selected={selected}
-                  apply={apply}
-                  onSwap={() => one && setSwapping(one)}
-                  onPick={togglePick}
-                  pickedHere={!!one && picks?.[one.page.event.id] === one.el.id}
+                  a={{
+                    apply,
+                    onSwap: () => one && setSwapping(one),
+                    onPick: togglePick,
+                    pickedHere: !!one && one.el.type === "photo" && picks?.[one.page.event.id] === one.el.id,
+                    onFront: toFront,
+                    onBack: toBack,
+                  }}
                 />
               }
               onPreview={setPreview}
@@ -261,49 +297,44 @@ export function BookPage() {
           ) : null
         }
       />
-      {editing && (
-        current.pages.length ? (
-          <EditBar
-            onUndo={undo}
-            onRedo={redo}
-            canUndo={past.length > 0}
-            canRedo={future.length > 0}
-            snap={snap}
-            onSnap={setSnap}
-            saving={saving}
-            onResetPages={() => {
-              const keys = current.pages.flatMap(({ page }) => (page ? [`${page.event.id}:${page.k}`] : []));
-              const next = { ...edits };
-              for (const k of keys) delete next[k];
-              commit(next);
-              setSelection(new Set());
-            }}
-            onDone={() => {
-              setEditing(false);
-              setSelection(new Set());
-              void saver.flush();
-            }}
-          />
-        ) : (
-          <p className="mt-3 text-center text-sm text-muted">Het omslag is nog niet te bewerken.</p>
-        )
-      )}
-      {!editing && (
+      {editing ? (
+        <EditBar
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={past.length > 0}
+          canRedo={future.length > 0}
+          snap={snap}
+          onSnap={setSnap}
+          onAddText={addText}
+          saving={saving}
+          onResetPages={() => {
+            const keys = current.pages.flatMap(({ page }) => (page ? [`${page.event.id}:${page.k}`] : []));
+            const next = { ...edits };
+            for (const k of keys) delete next[k];
+            commit(next);
+            setSelection(new Set());
+          }}
+        />
+      ) : (
         <p className="mt-2 pb-4 text-xs text-muted">
           {book.pages.length} pagina's (Albelli Staand L: tot ongeveer 120) · {(photosPlaced / book.pages.length).toFixed(1).replace(".", ",")} foto's per pagina ·{" "}
-          {Object.keys(picks ?? {}).length} grote foto's gekozen · {Object.keys(edits).length} pagina's bewerkt. Tik op een foto om hem als grote foto te kiezen.
+          {Object.keys(picks ?? {}).length} grote foto's gekozen · {Object.keys(edits).length} pagina's bewerkt. Tik op een foto om hem groot te bekijken.
         </p>
       )}
       {open && <PhotoSheet photo={open.photo} event={open.event} onClose={() => setOpen(null)} />}
-      {swapping && data.photos.get(swapping.el.id) && (
+      {swapping && (
         <PhotoPicker
-          current={data.photos.get(swapping.el.id)!}
+          current={data.photos.get(photoOf(swapping) ?? "")}
           event={swapping.page.event}
           photos={data.photos}
           events={data.plan.events}
           placed={placedIds}
           onPick={(id) => {
-            commit(swapPhoto(books!, edits, swapping.key, swapping.slot, swapping.el.id, id));
+            const old = photoOf(swapping);
+            // a photo in the book's grid trades places; cover parts, backgrounds and month titles just take it
+            commit(swapping.kind === "photo" && old
+              ? swapPhoto(books!, edits, swapping.key, swapping.slot, old, id)
+              : updateElement(edits, swapping.key, swapping.slot, { photo: id, zoom: undefined, focus: undefined }));
             setSwapping(null);
           }}
           onClose={() => setSwapping(null)}

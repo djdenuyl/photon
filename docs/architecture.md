@@ -58,23 +58,32 @@ The phone shows one page at a time (swipe or ← →), desktop one spread; the b
 
 ## Editor (`lib/edits.ts`, `components/Editor.tsx`)
 
-Edits sit on top of the generated layout, so a re-run of the layout keeps them. They are keyed by
-page (`eventId:k`, k = the page within its event) and slot (the photo the layout put there):
-`{photo?, x?, y?, w?, h?, zoom?, focus?, rot?, hidden?}`. `applyEdits` applies them after `buildBooks`.
-A swap with a photo already in the book trades the two places.
+The book opens in the editor ("Bewerken"; "Bekijken" hides the controls). Edits sit on top of the
+generated layout, so a re-layout keeps them. They are keyed by page (`eventId:k`, k = the page
+within its event; the cover `omslagN-back:0` / `omslagN-front:0`) and slot: the photo the layout
+put there, `letter0…14` / `shard0…3` / `background` / `label` on the cover, `month`, `cap0…` for
+captions, `add…` for text added in the editor. An edit can set `photo, x, y, w, h, zoom, focus,
+rot, z, border, text, size, color, hidden`. `applyEdits` applies them after `buildBooks` and
+orders each page by `z` (default: layout order). A swap with a photo already in the book trades
+places (grid photos only; cover parts, backgrounds and month titles just take the new photo).
 
-- Select: click (shift adds), or drag a band on empty space; a click outside the photos clears it.
-  Drag a photo to move the frame (the whole selection); corner handles resize; the see-through
-  centre handle of a single photo moves the photo inside its frame.
-- The photo toolbar (zoom, rotate, swap, big photo, reset, hide) floats above the selection; history,
-  snapping, save status and "Herstel pagina" sit below the book.
+- The cover is two ordinary pages (`coverPages` in layout.ts): letters and shards are photos with
+  a `shape` (glyph or polygon clip), the background a `bg` photo, "DEEL 1" a caption. The letters
+  follow the 2022 metrics, ink from about 7.5 to 271 mm. The HAPPY DONUTS font is served from the
+  bucket (`data/fonts/`), not from the repo.
+- Select: click (shift adds), drag a band, double-click a page's background; a click outside clears.
+  Drag moves (backgrounds stay put), corner handles resize (captions scale their text), the
+  see-through centre handle moves the photo inside its frame.
+- The selection toolbar floats next to it, icons only with a label on hover. It offers what fits
+  the selection: text field and size/colour (captions, month titles), swap, zoom, rotate, big photo,
+  full page (to the bleed, toggles back), border (none / white / black), front/back, reset, hide.
+- Below the book: undo/redo, snapping, add text, reset these pages, save status.
 - Snapping (toggle, remembered per browser; Alt = off while held): 2 mm to page edges, margins and
-  centre lines, and to other photos' edges, centres and edge + 5 mm gap; pink guides show the match.
+  centre lines, and to other elements' edges, centres and edge + 5 mm gap; pink guides show the match.
 - Keys: arrows nudge 1 mm (shift 5), Delete hides, Esc deselects, ctrl+Z / ctrl+Y.
 - Saving (`lib/saver.ts`): every change and undo is stored; writes are batched (500 ms), sent one
   at a time, retried on failure and flushed with keepalive when the page closes.
-- "Wissel" opens a picker: search, scope (event/month/year), people, close-up, sfeerbeeld.
-- Not editable yet: the cover, backgrounds/panoramas, captions and month titles.
+- Not editable yet: rotating month titles and captions, moving elements between pages.
 
 ## Years (`/boek/:year`)
 
