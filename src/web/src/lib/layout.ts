@@ -565,7 +565,10 @@ function shapeParts(e: PhotoElement & { shape: Shape }): { clip: string; under: 
     return { clip: text(""), under: text('fill="#000"', 1.3 * k, 1.5 * k), over: "" };
   }
   const pts = e.shape.pts.map(([u, v]) => `${e.x + u * e.w},${e.y + v * e.h}`).join(" ");
-  return { clip: `<polygon points="${pts}"/>`, under: "", over: e.shape.tint ? `<polygon points="${pts}" fill="${e.shape.tint}" opacity=".2"/>` : "" };
+  // a polygon photo keeps its frame: the outline drawn twice as wide under the photo
+  const border = e.border !== undefined ? e.border : e.frame ? { w: 1.5, color: "#fff" } : null;
+  const under = border && border.w > 0 ? `<polygon points="${pts}" fill="${border.color}" stroke="${border.color}" stroke-width="${2 * border.w}" stroke-linejoin="miter"/>` : "";
+  return { clip: `<polygon points="${pts}"/>`, under, over: e.shape.tint ? `<polygon points="${pts}" fill="${e.shape.tint}" opacity=".2"/>` : "" };
 }
 
 /**

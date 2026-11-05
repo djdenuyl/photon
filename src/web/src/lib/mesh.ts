@@ -43,8 +43,9 @@ class Verts {
 }
 
 /** Photos per row for n photos in a box: rows of about the page's proportions. */
-function rowSplit(n: number, box: Box): number[] {
-  const rows = Math.max(1, Math.round(Math.sqrt((n * box.h) / box.w / 0.75)));
+function rowSplit(n: number, box: Box, variant = 0): number[] {
+  const base = Math.round(Math.sqrt((n * box.h) / box.w / 0.75));
+  const rows = Math.min(n, Math.max(1, base + [0, 1, -1][variant % 3]));
   const out: number[] = [];
   for (let r = 0; r < rows; r++) out.push(Math.floor((n * (r + 1)) / rows) - Math.floor((n * r) / rows));
   return out.filter((k) => k > 0);
@@ -52,15 +53,16 @@ function rowSplit(n: number, box: Box): number[] {
 
 /** Rows of cells; where rows meet, every split point of both rows is on the line (so a cell's
  * edge includes its neighbours' corners and stays shared when they move). */
-function rows(n: number, box: Box): { verts: Pt[]; cells: number[][] } {
-  const counts = rowSplit(n, box);
+function rows(n: number, box: Box, variant = 0): { verts: Pt[]; cells: number[][] } {
+  const counts = rowSplit(n, box, variant);
+  const lean = [[-0.12, 0.18], [0.2, -0.15], [0, 0.25], [-0.22, 0.05]][variant % 4];
   const v = new Verts();
   const ys = counts.map((_, r) => box.y + (box.h * r) / counts.length).concat(box.y + box.h);
   // stagger the splits so rows don't line up into a plain grid
   const splits = counts.map((k, r) =>
     Array.from({ length: k + 1 }, (_, i) => {
       if (i === 0 || i === k) return i === 0 ? box.x : box.x + box.w;
-      return box.x + (box.w * (i + (r % 2 ? 0.18 : -0.12))) / k;
+      return box.x + (box.w * (i + lean[r % 2])) / k;
     }),
   );
   const line = (l: number) => [...new Set([...(splits[l - 1] ?? []), ...(splits[l] ?? [])].map((x) => Math.round(x * 100) / 100))].sort((a, b) => a - b);
@@ -91,7 +93,7 @@ function random(seed: string): () => number {
 }
 
 /** Flat-topped hexagons over the page, sized so about n of them show. */
-function hexagons(n: number, box: Box): { verts: Pt[]; cells: number[][] } {
+function hexagons(n: number, box: Box, variant = 0): { verts: Pt[]; cells: number[][] } {
   const visible = (r: number) => {
     let count = 0;
     const dx = 1.5 * r, dy = Math.sqrt(3) * r;
@@ -109,7 +111,7 @@ function hexagons(n: number, box: Box): { verts: Pt[]; cells: number[][] } {
   const dx = 1.5 * r, dy = Math.sqrt(3) * r;
   for (let c = -1; c * dx < W + r; c++)
     for (let row = -1; row * dy < H + dy; row++) {
-      const cx = c * dx, cy = row * dy + (c % 2 ? dy / 2 : 0);
+      const cx = c * dx + ((variant % 3) * dx) / 3, cy = row * dy + (c % 2 ? dy / 2 : 0) + ((variant % 2) * dy) / 2;
       if (!(cx > -r / 2 && cx < W + r / 2 && cy > -dy / 3 && cy < H + dy / 3)) continue;
       cells.push(Array.from({ length: 6 }, (_, k) => v.at(cx + r * Math.cos((Math.PI / 3) * k), cy + r * Math.sin((Math.PI / 3) * k))));
     }
@@ -117,17 +119,20 @@ function hexagons(n: number, box: Box): { verts: Pt[]; cells: number[][] } {
   return { verts: v.list, cells };
 }
 
-export function makeMesh(template: Mesh["template"], n: number, seed: string, opts?: { gap?: number; bleed?: boolean }): Mesh {
+/** A layout for n photos. `variant` gives another one of the same kind (other rows, other shakes,
+ * a shifted honeycomb): the smart-layout buttons step through them. */
+export function makeMesh(template: Mesh["template"], n: number, seed: string, opts?: { gap?: number; bleed?: boolean; variant?: number }): Mesh {
+  const variant = opts?.variant ?? 0;
   const gap = opts?.gap ?? (template === "raster" ? 5 : 3);
   // within the margins unless asked (a full-bleed shattered page loses its outer photos' edges
   // at the cut); the honeycomb is meant to run off the page
   const bleed = opts?.bleed ?? template === "honingraat";
   const box = domain(gap, bleed);
   // a honeycomb needs small cells to read as one (2022 had 17 on a page): extra cells get more photos
-  if (template === "honingraat") return { template, gap, bleed, ...hexagons(Math.max(n, 14), box) };
-  const m = rows(n, box);
+  if (template === "honingraat") return { template, gap, bleed, ...hexagons(Math.max(n, 14), box, variant) };
+  const m = rows(n, box, variant);
   if (template === "schuin") {
-    const rnd = random(seed);
+    const rnd = random(`${seed}#${variant}`);
     const cell = Math.sqrt((box.w * box.h) / Math.max(1, n));
     const edge = (p: Pt) => Math.abs(p[0] - box.x) < 0.01 || Math.abs(p[0] - box.x - box.w) < 0.01 || Math.abs(p[1] - box.y) < 0.01 || Math.abs(p[1] - box.y - box.h) < 0.01;
     m.verts = m.verts.map((p) => (edge(p) ? p : [p[0] + (rnd() - 0.5) * cell * 0.45, p[1] + (rnd() - 0.5) * cell * 0.35]));
@@ -183,4 +188,42 @@ export function pointInPolygon(x: number, y: number, pts: Pt[]): boolean {
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
+}
+
+/** Every side between two points, once (as index pairs). */
+export function meshEdges(mesh: Mesh): [number, number][] {
+  const seen = new Set<string>();
+  const out: [number, number][] = [];
+  for (const c of mesh.cells)
+    c.forEach((a, i) => {
+      const b = c[(i + 1) % c.length];
+      const k = a < b ? `${a}-${b}` : `${b}-${a}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push([a, b]);
+      }
+    });
+  return out;
+}
+
+/** A new point halfway a side, in every cell that has that side. */
+export function splitEdge(mesh: Mesh, a: number, b: number): Mesh {
+  const [p, q] = [mesh.verts[a], mesh.verts[b]];
+  const v = mesh.verts.length;
+  const cells = mesh.cells.map((c) => {
+    const out: number[] = [];
+    c.forEach((x, i) => {
+      out.push(x);
+      const y = c[(i + 1) % c.length];
+      if ((x === a && y === b) || (x === b && y === a)) out.push(v);
+    });
+    return out;
+  });
+  return { ...mesh, verts: [...mesh.verts, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]], cells };
+}
+
+/** A point taken out of every cell (a cell keeps at least three points). */
+export function removeVert(mesh: Mesh, v: number): Mesh {
+  if (mesh.cells.some((c) => c.includes(v) && c.length <= 3)) return mesh;
+  return { ...mesh, cells: mesh.cells.map((c) => c.filter((x) => x !== v)) };
 }

@@ -14,8 +14,6 @@ export interface PageActions {
   onTemplate: (t: Mesh["template"] | null) => void;
   onGap: (gap: number) => void;
   onBleed: (bleed: boolean) => void;
-  onShuffle: () => void;
-  onMeshPoints: (on: boolean) => void;
   onNote: () => void;
   onClose: () => void;
 }
@@ -43,7 +41,6 @@ export function PagePanel({
   tones,
   hasBgPhoto,
   mesh,
-  meshPoints,
   sides,
   a,
 }: {
@@ -52,7 +49,6 @@ export function PagePanel({
   tones: string[];
   hasBgPhoto: boolean;
   mesh: Mesh | undefined;
-  meshPoints: boolean;
   /** In a spread: which page this is, and switching to the other one. */
   sides?: { current: "left" | "right"; pick: (side: "left" | "right") => void };
   a: PageActions;
@@ -101,9 +97,7 @@ export function PagePanel({
         </div>
         {mesh && (
           <div className="mt-3 space-y-2">
-            <button type="button" className={`${btn(meshPoints)} w-full`} onClick={() => a.onMeshPoints(!meshPoints)}>
-              {meshPoints ? "Klaar met punten verschuiven" : "Punten verschuiven"}
-            </button>
+            <p className="text-xs text-ink-2">Sleep de knooppunten in de voegen; + op een voeg voegt er een toe, een aangeklikt knooppunt haal je weg met ×. De blauwe knoppen naast het boek geven een andere variant.</p>
             <label className="flex items-center gap-2 text-sm">
               <span className="w-16 shrink-0 text-ink-2">Voeg</span>
               <input type="range" min={0} max={10} step={0.5} value={mesh.gap} onChange={(e) => a.onGap(Number(e.target.value))} className="flex-1" />
@@ -114,7 +108,6 @@ export function PagePanel({
               Tot in de afloop (geen marge)
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {mesh.template === "schuin" && <button type="button" className={btn()} onClick={a.onShuffle}>Opnieuw schudden</button>}
               <button type="button" className={btn()} onClick={() => a.onTemplate(null)}>Terug naar het voorstel</button>
             </div>
           </div>

@@ -83,6 +83,9 @@ describe("applyEdits", () => {
     let ed = updateElement({}, key, photo.id, { pts: tri });
     let out = applyEdits(fresh(), ed)[0].pages[0].elements.find((e) => e.slot === photo.id);
     expect(out).toMatchObject({ type: "photo", x: 20, y: 20, w: 100, h: 120, shape: { kind: "poly" } });
+    // a polygon photo keeps its frame
+    const withFrame = applyEdits(fresh(), updateElement(ed, key, photo.id, { border: { w: 2, color: "#ff0000" } }))[0].pages[0];
+    expect(pageBody(withFrame, photos, (p) => p.thumb)).toContain('stroke="#ff0000" stroke-width="4"');
     ed = updateElement(ed, key, photo.id, { pts: undefined });
     out = applyEdits(fresh(), ed)[0].pages[0].elements.find((e) => e.slot === photo.id);
     expect(out?.type === "photo" && out.shape).toBeFalsy();

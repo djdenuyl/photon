@@ -112,8 +112,6 @@ export function BookPage() {
   const [freshNote, setFreshNote] = useState<string | null>(null);
   // which smart layout each page is on (by page key), to click through them
   const [smartAt, setSmartAt] = useState<Record<string, number>>({});
-  // the page (key) whose mesh points are being dragged
-  const [meshPoints, setMeshPoints] = useState<string | null>(null);
   const edits = useMemo(() => parseEdits(remoteEdits), [remoteEdits]);
   const shown = preview ?? edits;
 
@@ -137,7 +135,6 @@ export function BookPage() {
     next.set("s", String(Math.max(0, i)));
     setParams(next, { replace: true });
     setSelection(new Set());
-    setMeshPoints(null);
   };
 
   // every change (and every undo/redo) is stored; the saver batches them into few writes
@@ -217,8 +214,7 @@ export function BookPage() {
     const pe = Object.fromEntries(Object.entries(edits[key] ?? {}).filter(([slot]) => !slot.startsWith("cell") && slot !== "mesh"));
     if (!template) {
       commit({ ...edits, [key]: pe });
-      setMeshPoints(null);
-      return;
+        return;
     }
     const plain = page.elements.flatMap((e) => (e.type === "photo" && !e.bg && (!e.shape || e.cell !== undefined) && e.id ? [e.id] : []));
     const mesh = makeMesh(template, Math.max(1, plain.length), opts?.seed ?? key, opts);
@@ -238,6 +234,15 @@ export function BookPage() {
   // smart layout: the photos (and month title) of a page in the next (or previous) arrangement
   const smart = (page: Page, dir: 1 | -1) => {
     const key = `${page.event.id}:${page.k}`;
+    const mesh = meshOf(key);
+    if (mesh) {
+      // a mesh layout: another variant of the same kind (other rows, other shakes, shifted hexagons)
+      const at = (smartAt[key] ?? 0) + dir;
+      const n = mesh.template === "honingraat" ? (edits[key]?.mesh?.cells ?? []).filter(Boolean).length : mesh.cells.length;
+      setMeshKeepCells(key, makeMesh(mesh.template, Math.max(1, n), key, { gap: mesh.gap, bleed: mesh.bleed, variant: ((at % 12) + 12) % 12 }));
+      setSmartAt({ ...smartAt, [key]: at });
+      return;
+    }
     const cells: Cell[] = page.elements.flatMap((e): Cell[] => {
       if (e.type === "month") return [{ slot: e.slot ?? "month", aspect: e.w / e.h }];
       if (e.type !== "photo" || e.bg || e.shape || e.cell !== undefined) return [];
@@ -467,11 +472,12 @@ export function BookPage() {
               selection={selection}
               onSelect={setSelection}
               snap={snap}
-              mesh={(() => {
-                const at = current.pages.find(({ page }) => page && `${page.event.id}:${page.k}` === meshPoints);
-                const m = meshPoints ? meshOf(meshPoints) : undefined;
-                return at && m && meshPoints ? { key: meshPoints, dx: at.dx, mesh: m } : null;
-              })()}
+              meshes={current.pages.flatMap(({ page, dx }) => {
+                const key = page ? `${page.event.id}:${page.k}` : "";
+                const m = page ? meshOf(key) : undefined;
+                return m ? [{ key, dx, mesh: m }] : [];
+              })}
+              meshActive={one && (one.kind === "cell" || one.kind === "page") && meshOf(one.key) ? one.key : null}
               noted={noted}
               swapFrom={swapping}
               onSwapWith={(other) => {
@@ -533,7 +539,6 @@ export function BookPage() {
           tones={tones}
           hasBgPhoto={pageItem.page.elements.some((e) => e.type === "photo" && e.bg)}
           mesh={meshOf(pageItem.key)}
-          meshPoints={meshPoints === pageItem.key}
           sides={current.pages.filter(({ page }) => page).length === 2 ? { current: pageItem.dx > 0 ? "right" : "left", pick: selectPage } : undefined}
           a={{
             onColor: (color) => commit(updateElement(edits, pageItem.key, "pagefill", { color, hidden: undefined })),
@@ -560,11 +565,6 @@ export function BookPage() {
               const m = meshOf(pageItem.key);
               if (m) setMeshKeepCells(pageItem.key, makeMesh(m.template, pageEdit?.mesh?.cells?.length ?? m.cells.length, pageItem.key, { gap: m.gap, bleed }));
             },
-            onShuffle: () => {
-              const m = meshOf(pageItem.key);
-              if (m) setMeshKeepCells(pageItem.key, makeMesh(m.template, pageEdit?.mesh?.cells?.length ?? m.cells.length, `${pageItem.key}${Date.now()}`, { gap: m.gap, bleed: m.bleed }));
-            },
-            onMeshPoints: (on) => setMeshPoints(on ? pageItem.key : null),
             onNote: () => addNote({ page: pageItem.key, label: pageLabel(pageItem.page) }),
             onClose: () => setSelection(new Set()),
           }}

@@ -9,7 +9,7 @@ The sign-in link (see /api/auth/agent) is signed with the session secret from Se
 only someone with David's gcloud access (PHOTON_GCLOUD_CONFIG) can make one; it is valid for two
 minutes and gives a two-hour session. Screenshots use Playwright with the installed Edge (or
 Chrome), in a throwaway profile; --phone emulates a phone (size, touch, device pixels). --click
-clicks CSS selectors (in order) before the screenshot.
+clicks CSS selectors (in order) before the screenshot, --tap clicks positions.
 """
 
 from argparse import ArgumentParser
@@ -58,6 +58,7 @@ def main() -> None:
     ap.add_argument("--size", default="1440x1000")
     ap.add_argument("--phone", action="store_true", help="emulate a phone (390x844, touch)")
     ap.add_argument("--click", action="append", default=[], help="CSS selector to click first")
+    ap.add_argument("--tap", action="append", default=[], help="x,y to click (after --click)")
     ap.add_argument("--wait", type=int, default=4000, help="ms to wait for the photos")
     ap.add_argument("--link", action="store_true", help="only print the sign-in link")
     args = ap.parse_args()
@@ -81,6 +82,10 @@ def main() -> None:
         page.goto(link, wait_until="networkidle")
         for sel in args.click:
             page.click(sel)
+            page.wait_for_timeout(600)
+        for xy in args.tap:
+            x, y = (float(v) for v in xy.split(","))
+            page.mouse.click(x, y)
             page.wait_for_timeout(600)
         page.wait_for_timeout(args.wait)
         page.screenshot(path=str(out))

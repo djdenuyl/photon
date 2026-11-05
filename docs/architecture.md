@@ -93,7 +93,7 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   for the covers apart; filters "nog niet in het boek" and "meer dan 1× in het boek".
 - A photo frame can get its own outline (the shape button): its `pts` (mm) make it a polygon with
   the same point handles as colour areas (and the back cover's shards); "terug naar een
-  rechthoek" clears them.
+  rechthoek" clears them. A polygon photo keeps its frame (drawn as a wide outline under it).
 - Save status below the book: bouncing dots while saving, a green check when saved, a red "!"
   when it failed (it retries); a fixed size so the bar doesn't jump.
 - The swap picker: search, scope (event / month / this book / year; cover parts, backgrounds and
@@ -142,8 +142,12 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   "Tot in de afloop" is on — full bleed cut the outer photos at the trim; like 2022 p. 32–33)
   and Honingraat (at least 14 hexagons, full bleed, like 2022 p. 3; cells beyond the page's photos
   stay empty). A mesh replaces the page's plain photos; month titles, captions and
-  backgrounds stay. Cells (`cell0…`) can be swapped, zoomed and panned (drag inside), not moved;
-  "Punten verschuiven" shows the mesh points to drag. Gap and bleed are settings of the mesh.
+  backgrounds stay. Cells (`cell0…`) can be swapped, zoomed and panned (drag inside), not moved.
+  The mesh's points (where the gaps meet) are always shown and can be dragged; with a cell or the
+  page selected every side gets a "+" (a new point, in both cells along it: `splitEdge`) and a
+  picked point a red × (`removeVert`, never below a triangle). Gap and bleed are settings of the
+  mesh. The smart-layout buttons give another variant of the same mesh (`variant`: other rows and
+  leans, other shakes, a shifted honeycomb), keeping the photos per cell.
 - Cover letters: a letter's box is the ink of its glyph (HAPPY DONUTS metrics measured with canvas
   measureText, in `GLYPHS`), so its photo can be panned right up to the letter's edges.
 - Background photos get a white veil (`veil`, default `BG_VEIL` 0.25, a slider in their toolbar),

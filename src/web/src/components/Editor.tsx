@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { updateElement, type ElementEdit, type Edits } from "@/lib/edits";
 import { BG_VEIL, PAGE, placement, type Box, type Element, type Page } from "@/lib/layout";
-import { pointInPolygon, type Mesh, type Pt } from "@/lib/mesh";
+import { meshEdges, pointInPolygon, removeVert, splitEdge, type Mesh, type Pt } from "@/lib/mesh";
 import type { SaveStatus } from "@/lib/saver";
 import type { Photos } from "@/lib/types";
 
@@ -136,7 +136,8 @@ export function EditorOverlay({
   onSelect,
   snap,
   bar,
-  mesh,
+  meshes,
+  meshActive,
   noted,
   onNotes,
   swapFrom,
@@ -154,8 +155,10 @@ export function EditorOverlay({
   snap: boolean;
   /** The toolbar for the selection, shown above (or below) it. */
   bar: ReactNode;
-  /** A mesh layout whose points are being moved (the page's key and offset). */
-  mesh: { key: string; dx: number; mesh: Mesh } | null;
+  /** The mesh layouts on the visible pages (their points can always be dragged). */
+  meshes: { key: string; dx: number; mesh: Mesh }[];
+  /** The mesh whose sides get "+" handles (its page or one of its cells is selected). */
+  meshActive: string | null;
   /** What has open notes: element selections (`key|slot`) and page keys. */
   noted: Set<string>;
   onNotes: () => void;
@@ -191,6 +194,8 @@ export function EditorOverlay({
 
   // a point of a colour area, picked to delete it (Delete / Backspace)
   const [vertex, setVertex] = useState<{ sel: string; index: number } | null>(null);
+  // a point of a mesh layout, picked to delete it
+  const [meshNode, setMeshNode] = useState<{ key: string; index: number } | null>(null);
   useEffect(() => {
     if (!vertex) return;
     const onKey = (e: KeyboardEvent) => {
@@ -228,10 +233,13 @@ export function EditorOverlay({
       return;
     }
     const mv = t.closest<HTMLElement>("[data-mvert]");
-    if (mv && mesh) {
-      drag.current = { mode: "mesh", ...p, key: mesh.key, mesh: mesh.mesh, index: Number(mv.dataset.mvert), base: edits, moved: false };
+    const [mkey, mi] = (mv?.dataset.mvert ?? "").split("|");
+    const m = meshes.find((x) => x.key === mkey);
+    if (mv && m) {
+      drag.current = { mode: "mesh", ...p, key: m.key, mesh: m.mesh, index: Number(mi), base: edits, moved: false };
       return;
     }
+    setMeshNode(null);
     setVertex(null);
     // boxes first; mesh cells and colour areas by their outline, the topmost one
     const target = (hit ? byId.get(hit.dataset.sel!) : undefined)
@@ -387,6 +395,7 @@ export function EditorOverlay({
       return;
     }
     if (d.mode === "vert" && !d.moved) setVertex({ sel: d.target.sel, index: d.index });
+    if (d.mode === "mesh" && !d.moved) setMeshNode({ key: d.key, index: d.index });
     const sidePts = d.mode === "edge" ? editablePts(d.target) : null;
     if (d.mode === "edge" && !d.moved && sidePts) {
       // a click (not a drag) on a side's middle: a new point there
@@ -412,7 +421,8 @@ export function EditorOverlay({
 
   const pct = (v: number, of: number) => `${(v / of) * 100}%`;
   const single = chosen.length === 1;
-  const poly = !mesh && single && editablePts(chosen[0]) ? chosen[0] : null;
+  // a page with a mesh shows the mesh's points, not its colour area's
+  const poly = single && editablePts(chosen[0]) && !(chosen[0].kind === "page" && meshes.some((m) => m.key === chosen[0].key)) ? chosen[0] : null;
   const polyPts = poly ? editablePts(poly)! : [];
   let barStyle: CSSProperties | null = null;
   if (chosen.length && bar && !busy && !band) {
@@ -486,9 +496,9 @@ export function EditorOverlay({
               stroke="var(--color-accent)" strokeWidth="2" strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
           );
         })}
-        {mesh && mesh.mesh.cells.map((c, k) => (
-          <polygon key={k} points={c.map((v) => `${mesh.mesh.verts[v][0] + mesh.dx},${mesh.mesh.verts[v][1]}`).join(" ")} fill="none" stroke="#fff" strokeOpacity=".8" strokeDasharray="4 3" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-        ))}
+        {meshes.filter((m) => m.key === meshActive).flatMap((m) => m.mesh.cells.map((c, k) => (
+          <polygon key={`${m.key}${k}`} points={c.map((v) => `${m.mesh.verts[v][0] + m.dx},${m.mesh.verts[v][1]}`).join(" ")} fill="none" stroke="#fff" strokeOpacity=".8" strokeDasharray="4 3" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        )))}
       </svg>
       {poly && (
         <>
@@ -522,13 +532,49 @@ export function EditorOverlay({
           </button>
         );
       })()}
-      {mesh && mesh.mesh.verts.map((q, k) =>
-        q[0] > -8 && q[0] < PAGE.w + 8 && q[1] > -8 && q[1] < PAGE.h + 8 ? (
-          <span key={`m${k}`} data-mvert={k} title="Sleep om de indeling te veranderen"
-            className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-accent bg-white shadow"
-            style={{ left: pct(mesh.dx + Math.min(Math.max(q[0], -2), PAGE.w + 2), width), top: pct(Math.min(Math.max(q[1], -2), PAGE.h + 2), PAGE.h) }} />
-        ) : null,
-      )}
+      {meshes.map((m) => {
+        // the mesh's points, where the gaps meet; the active mesh also gets "+" on every side
+        const shown = (q: Pt) => q[0] > -8 && q[0] < PAGE.w + 8 && q[1] > -8 && q[1] < PAGE.h + 8;
+        const at = (q: Pt) => ({ left: pct(m.dx + Math.min(Math.max(q[0], -2), PAGE.w + 2), width), top: pct(Math.min(Math.max(q[1], -2), PAGE.h + 2), PAGE.h) });
+        const used = new Set(m.mesh.cells.flat());
+        const active = m.key === meshActive;
+        return (
+          <div key={`mesh${m.key}`} className="contents">
+            {active && meshEdges(m.mesh).map(([a, b]) => {
+              const mid: Pt = [(m.mesh.verts[a][0] + m.mesh.verts[b][0]) / 2, (m.mesh.verts[a][1] + m.mesh.verts[b][1]) / 2];
+              return shown(mid) ? (
+                <span key={`me${a}-${b}`} title="Een extra knooppunt" role="button" aria-label="Knooppunt toevoegen"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    onCommit(updateElement(edits, m.key, "mesh", { mesh: splitEdge(m.mesh, a, b) }));
+                    setMeshNode({ key: m.key, index: m.mesh.verts.length });
+                  }}
+                  className="absolute z-[7] flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm border-2 border-white bg-accent/70 text-[11px] leading-none font-bold text-white shadow"
+                  style={at(mid)}>+</span>
+              ) : null;
+            })}
+            {m.mesh.verts.map((q, k) =>
+              used.has(k) && shown(q) ? (
+                <span key={`m${k}`} data-mvert={`${m.key}|${k}`} title="Sleep om de indeling te veranderen; klik om het te kunnen verwijderen"
+                  className={`absolute z-[7] -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 shadow ${active ? "h-4 w-4" : "h-3 w-3"} ${meshNode?.key === m.key && meshNode.index === k ? "border-accent bg-accent" : "border-accent bg-white"}`}
+                  style={at(q)} />
+              ) : null,
+            )}
+            {meshNode?.key === m.key && m.mesh.verts[meshNode.index] && (
+              <button type="button" aria-label="Knooppunt verwijderen" title="Knooppunt verwijderen"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  onCommit(updateElement(edits, m.key, "mesh", { mesh: removeVert(m.mesh, meshNode.index) }));
+                  setMeshNode(null);
+                }}
+                className="absolute z-[8] flex h-5 w-5 items-center justify-center rounded-full bg-[#d92d20] text-xs font-bold text-white shadow"
+                style={{ left: `calc(${at(m.mesh.verts[meshNode.index]).left} + 10px)`, top: `calc(${at(m.mesh.verts[meshNode.index]).top} - 22px)` }}>
+                ×
+              </button>
+            )}
+          </div>
+        );
+      })}
       {single && (() => {
         // the selection's handles, on top of everything (a photo drawn later must not catch them)
         const i = chosen[0];
@@ -805,6 +851,9 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
   const month = one?.el.type === "month" ? one.el : null;
   const fillEl = one?.el.type === "fill" ? one.el : null;
   const framed = every("photo");
+  // a photo frame given its own outline (not the cover's shards) keeps its border options
+  const reshaped = (i: Item) => i.kind === "shape" && !i.page.cover && i.el.type === "photo" && i.el.shape?.kind === "poly";
+  const bordered = framed || selected.every(reshaped);
   const colour = caption ? (caption.color ?? "#fff") : fillEl?.color;
   const pictured = every("photo", "shape", "bg", "month", "cell");
   return (
@@ -855,7 +904,7 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
       )}
       {one && !one.page.cover && (one.kind === "photo" || (one.kind === "shape" && one.el.type === "photo" && one.el.shape?.kind === "poly")) && (
         <IconBtn icon="shape" label={one.kind === "shape" ? "Terug naar een rechthoek" : "Vorm: sleep de hoeken, + voor een extra punt"} active={one.kind === "shape"}
-          onClick={() => a.apply((i) => (i.kind === "shape" ? { pts: undefined } : { pts: [[i.box.x, i.box.y], [i.box.x + i.box.w, i.box.y], [i.box.x + i.box.w, i.box.y + i.box.h], [i.box.x, i.box.y + i.box.h]], border: null, rot: 0 }))} />
+          onClick={() => a.apply((i) => (i.kind === "shape" ? { pts: undefined } : { pts: [[i.box.x, i.box.y], [i.box.x + i.box.w, i.box.y], [i.box.x + i.box.w, i.box.y + i.box.h], [i.box.x, i.box.y + i.box.h]], rot: 0 }))} />
       )}
       {one?.kind === "photo" && !one.page.cover && <IconBtn icon="star" label="Grote foto van deze gebeurtenis" active={a.pickedHere} onClick={a.onPick} />}
       {framed && (
@@ -865,9 +914,9 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
               const back = selected.every(isFull);
               a.apply(() => (back ? { x: undefined, y: undefined, w: undefined, h: undefined } : { x: -B, y: -B, w: PAGE.w + 2 * B, h: PAGE.h + 2 * B, rot: 0 }));
             }} />
-          <IconBtn icon="border" label="Rand" active={menu === "border"} onClick={() => setMenu(menu === "border" ? null : "border")} />
         </>
       )}
+      {bordered && <IconBtn icon="border" label="Rand" active={menu === "border"} onClick={() => setMenu(menu === "border" ? null : "border")} />}
       {!kinds.has("bg") && !kinds.has("cell") && !kinds.has("page") && (
         <>
           <IconBtn icon="front" label="Naar voren" onClick={a.onFront} />
@@ -878,7 +927,7 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
       {one && <IconBtn icon="note" label="Notitie (voor jezelf of de agent)" onClick={a.onNote} />}
       <IconBtn icon="reset" label="Terug naar het voorstel" onClick={() => a.apply(() => null)} />
       {!every("shape", "cell") && <IconBtn icon="trash" danger label="Verwijderen (Delete)" onClick={() => a.apply(() => ({ hidden: true }))} />}
-      {menu === "border" && framed && (
+      {menu === "border" && bordered && (
         <div className={dock ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8.5rem)] z-40 rounded-2xl border border-hair bg-surface p-3 shadow-xl" : "absolute top-full right-0 z-20 mt-1.5 w-40 rounded-xl border border-hair bg-surface p-1 shadow-lg"}>
           {BORDERS.map((b) => (
             <button key={b.label} type="button" onClick={() => { a.apply(() => ({ border: b.border })); setMenu(null); }}

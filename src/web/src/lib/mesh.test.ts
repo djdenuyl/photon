@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bboxOf, cellPolygons, inset, makeMesh, pointInPolygon, type Pt } from "./mesh";
+import { bboxOf, cellPolygons, inset, makeMesh, meshEdges, pointInPolygon, removeVert, splitEdge, type Pt } from "./mesh";
 
 const square: Pt[] = [[0, 0], [10, 0], [10, 10], [0, 10]];
 
@@ -59,5 +59,33 @@ describe("pointInPolygon", () => {
   it("tells inside from outside", () => {
     expect(pointInPolygon(5, 5, square)).toBe(true);
     expect(pointInPolygon(15, 5, square)).toBe(false);
+  });
+});
+
+describe("editing a mesh", () => {
+  it("adds a point halfway a side, in both cells along it", () => {
+    const m = makeMesh("raster", 4, "x");
+    const shared = meshEdges(m).find(([a, b]) => m.cells.filter((c) => c.includes(a) && c.includes(b)).length === 2)!;
+    const next = splitEdge(m, shared[0], shared[1]);
+    const v = m.verts.length;
+    expect(next.cells.filter((c) => c.includes(v))).toHaveLength(2);
+    expect(next.verts[v]).toEqual([(m.verts[shared[0]][0] + m.verts[shared[1]][0]) / 2, (m.verts[shared[0]][1] + m.verts[shared[1]][1]) / 2]);
+  });
+
+  it("takes a point out again, but never below a triangle", () => {
+    const m = makeMesh("raster", 4, "x");
+    const [a, b] = meshEdges(m)[0];
+    const v = m.verts.length;
+    expect(removeVert(splitEdge(m, a, b), v).cells).toEqual(m.cells);
+    const tri = { ...m, cells: [[0, 1, 2]] };
+    expect(removeVert(tri, 1)).toBe(tri);
+  });
+
+  it("gives other variants of the same kind", () => {
+    const a = makeMesh("schuin", 6, "p", { variant: 0 }), b = makeMesh("schuin", 6, "p", { variant: 1 });
+    expect(a.verts).not.toEqual(b.verts);
+    expect(makeMesh("raster", 6, "p", { variant: 1 }).cells).toHaveLength(6);
+    const h0 = makeMesh("honingraat", 5, "p"), h1 = makeMesh("honingraat", 5, "p", { variant: 1 });
+    expect(h0.verts).not.toEqual(h1.verts);
   });
 });
