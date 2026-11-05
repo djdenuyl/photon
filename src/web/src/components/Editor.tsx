@@ -90,6 +90,29 @@ export function photoOf(i: Item): string | null {
 
 const rotOf = (i: Item) => (i.el.type === "photo" ? (i.el.rot ?? 0) : 0);
 
+/**
+ * Does a text frame's text not fit? Counted in lines × line height, in screen pixels: the
+ * element's own scroll sizes are whole numbers of page units (a millimetre each, far too coarse)
+ * and include the font's ascent and descent, which for HAPPY DONUTS are much taller than its
+ * letters (so "DEEL 2" looked too big for a frame it fits in).
+ */
+function textOverflows(el: HTMLElement): boolean {
+  const box = el.getBoundingClientRect();
+  const style = getComputedStyle(el);
+  const scale = box.width / (parseFloat(style.width) || 1);
+  const line = parseFloat(style.lineHeight) * scale;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+  if (!rects.length || !line) return false;
+  const tops: number[] = [];
+  for (const r of rects) if (!tops.some((t) => Math.abs(t - r.top) < line / 2)) tops.push(r.top);
+  const tooTall = tops.length * line > box.height + 0.5;
+  // a space where a line wraps hangs past the edge: only real text (wider than half a line) counts
+  const tooWide = rects.some((r) => r.width > line / 2 && r.right > box.right + 1);
+  return tooTall || tooWide;
+}
+
 // Snapping: within 2 mm of a page's margins, centre lines and edges, or of another element's edges,
 // centre, or edge plus the 5 mm gap. Hold Alt to place freely.
 const SNAP = 2;
@@ -186,7 +209,7 @@ export function EditorOverlay({
       .filter((i) => i.kind === "caption")
       .filter((i) => {
         const el = stage.querySelector<HTMLElement>(`[data-cap="${CSS.escape(i.sel)}"]`);
-        return !!el && (el.scrollHeight > el.clientHeight + 0.5 || el.scrollWidth > el.clientWidth + 0.5);
+        return !!el && textOverflows(el);
       })
       .map((i) => i.sel);
     if (over.join() !== overflow.join()) setOverflow(over);

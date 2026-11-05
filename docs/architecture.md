@@ -111,7 +111,10 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
 - Text frames: a caption is a box (x/y/w/h); its text wraps within the width and is cut off at
   the bottom (rendered as a foreignObject). Corner handles resize the frame, not the text; A−/A+
   change the size. The editor measures every frame on the rendered page and marks one whose text
-  doesn't fit with a red dashed outline and "!" (as Albelli does). Caption edits from before text
+  doesn't fit with a red dashed outline and "!" (as Albelli does): lines × line height and the
+  lines' right edges in screen pixels (`textOverflows`), not the element's scroll sizes, which are
+  whole page units and count HAPPY DONUTS' tall ascent/descent; a space hanging past the edge
+  where a line wraps doesn't count. Caption edits from before text
   frames (no `box`) are converted on load and on their first change.
 - "Bekijken" shows the book as large as the window allows (no filmstrip) with a full-screen
   button: the Fullscreen API, or the whole window where there is none (iPhone Safari).
