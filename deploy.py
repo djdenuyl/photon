@@ -117,7 +117,12 @@ def setup() -> None:
         f"--member=serviceAccount:{runtime_sa}", "--role=roles/storage.objectViewer",
         capture=True,
     )  # fmt: skip
-    print(f"{runtime_sa} can read {bucket}")
+    gcloud(
+        "storage", "buckets", "add-iam-policy-binding", bucket,
+        f"--member=serviceAccount:{runtime_sa}", "--role=roles/storage.objectUser",
+        capture=True,
+    )  # fmt: skip
+    print(f"{runtime_sa} can read {bucket} and add imported photos")
 
 
 def write_env_file(env_vars: dict[str, str]) -> Path:

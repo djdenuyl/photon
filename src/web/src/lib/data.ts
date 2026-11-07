@@ -6,9 +6,9 @@ import type { Duplicate, Label, Photo, Photos, Plan, StringMap } from "./types";
 export const YEAR = 2025;
 const DATA = `/data/${YEAR}/`;
 
-export const thumbUrl = (p: Photo): string => DATA + p.thumb;
+export const thumbUrl = (p: Photo): string => p.thumb.startsWith("/") ? p.thumb : DATA + p.thumb;
 /** 1600 px web versions for the big view (originals stay out of the browser). */
-export const displayUrl = (p: Photo): string => `${DATA}display/${p.id}.jpg`;
+export const displayUrl = (p: Photo): string => p.display ?? `${DATA}display/${p.id}.jpg`;
 
 export interface YearData {
   plan: Plan;
@@ -19,18 +19,29 @@ export interface YearData {
 
 async function loadYear(): Promise<YearData> {
   const get = <T,>(file: string) => fetchJson<T>(DATA + file);
-  const [plan, index, labels, tones, duplicates] = await Promise.all([
+  const [plan, index, labels, tones, duplicates, imported] = await Promise.all([
     get<Plan>("plan.json"),
     get<Photo[]>("index.json"),
     get<Record<string, Label>>("labels.json").catch(() => ({}) as Record<string, Label>),
     get<StringMap>("tones.json").catch(() => ({}) as StringMap),
     get<Duplicate[]>("duplicates.json").catch(() => [] as Duplicate[]),
+    fetchJson<ImportedPhoto[]>(`/api/google-photos/${YEAR}`).catch(() => [] as ImportedPhoto[]),
   ]);
   for (const p of index) {
     p.label = labels[p.id];
     p.tone = tones[p.id];
   }
+  for (const p of imported) {
+    index.push(p);
+    const event = plan.events.find((e) => e.id === p.event_id);
+    if (event && !event.photoIds.includes(p.id)) event.photoIds.push(p.id);
+  }
+  plan.photos = index.length;
   return { plan, index, photos: new Map(index.map((p) => [p.id, p])), duplicates };
+}
+
+interface ImportedPhoto extends Photo {
+  event_id: string;
 }
 
 export function useYearData() {

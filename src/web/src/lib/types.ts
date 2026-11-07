@@ -21,6 +21,7 @@ export interface Photo {
   time: string | null;
   whatsapp: boolean;
   thumb: string;
+  display?: string;
   w: number;
   h: number;
   similarTo?: string;

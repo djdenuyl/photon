@@ -773,6 +773,7 @@ source = { editable = "." }
 default-groups = ["dev", "tools"]
 dependencies = [
     { name = "authlib" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "google-auth" },
     { name = "google-cloud-firestore" },
@@ -798,6 +799,7 @@ tools = [
 [package.metadata]
 requires-dist = [
     { name = "authlib", specifier = ">=1.4" },
+    { name = "cryptography", specifier = ">=44.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "google-auth", specifier = ">=2.38" },
     { name = "google-cloud-firestore", specifier = ">=2.20" },

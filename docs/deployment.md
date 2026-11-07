@@ -26,8 +26,12 @@ uv run python deploy.py                # build (Cloud Build) + deploy, map the d
 Login is Google OAuth for the accounts in `PHOTON_ALLOWED_EMAILS` only. The OAuth client is shared
 with Denarius/Jumper/Stumped; its authorized redirect URIs must include
 `https://photon.daviddenuyl.com/api/auth/callback` (and `http://localhost:5173/api/auth/callback`
-for local dev). That list is edited by hand in the Cloud Console (APIs & Services → Credentials);
-gcloud cannot change it.
+for local dev). Add the Google Photos callback URLs too:
+`https://photon.daviddenuyl.com/api/google-photos/callback` and
+`http://localhost:5173/api/google-photos/callback`. Enable the Google Photos Picker API and add the
+allowed account as an OAuth consent screen test user while the app is in testing. These settings
+are edited by hand in Cloud Console (APIs & Services → Credentials / OAuth consent screen); gcloud
+cannot change them. The connector requests only `photospicker.mediaitems.readonly`.
 
 ## Data in the bucket
 
@@ -36,3 +40,8 @@ gcloud cannot change it.
 year `plan.json`, `index.json`, `labels.json`, `tones.json`, `duplicates.json`, `thumbs/` and
 `display/` (1600 px versions). Originals, raw exports and renders stay local. The app streams the
 files through `/data/...` after login; the service worker caches photos.
+
+Google Photos imports are stored separately under `data/<year>/imports/` in the private bucket.
+`uv run python deploy.py setup` grants the runtime service account object read, create and delete access.
+Imported metadata and encrypted OAuth refresh tokens are stored in Firestore. Local development
+also reads and writes imports in the bucket so they appear consistently in the one environment.

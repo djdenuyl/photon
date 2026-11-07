@@ -30,7 +30,7 @@ export interface ElementEdit {
   color?: string;
   align?: "left" | "center" | "right";
   /** An element added in the editor (not from the layout). */
-  add?: "caption" | "fill" | "photo";
+  add?: "caption" | "fill" | "photo" | "frame";
   /** Fills: their corner points (mm). */
   pts?: Pt[];
   /** Slot "mesh": the page laid out as a mesh of photo cells, and the photo per cell. */
@@ -110,6 +110,9 @@ function baseElements(page: Page, pe: PageEdits | undefined): Element[] {
     } else if (ed.add === "photo") {
       // a background photo chosen in the page menu: above the page colour, below everything else
       base.push({ type: "photo", id: ed.photo ?? "", slot, bg: true, x: -B, y: -B, w: PAGE.w + 2 * B, h: PAGE.h + 2 * B, z: -0.5 });
+    } else if (ed.add === "frame") {
+      const w = ed.w ?? 80, h = ed.h ?? 55;
+      base.push({ type: "photo", id: ed.photo ?? "", slot, x: ed.x ?? (PAGE.w - w) / 2, y: ed.y ?? (PAGE.h - h) / 2, w, h, z: 100 + base.length });
     } else if (ed.add === "fill") {
       base.push(fill(slot, "#f2c94c", [[60, 80], [150, 80], [150, 200], [60, 200]], 0.25));
     }

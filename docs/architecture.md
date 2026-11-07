@@ -35,6 +35,9 @@ the site.
 - `state/{year}-edits` — editor changes per page (`{data: {"eventId:k": json}}`, see below).
 - `state/{year}-notes` — notes on pages and elements (`{data: {noteId: json}}`, see Notes).
 - `years/{year}` — years started with "+ Nieuw jaar" (`GET/POST /api/years`).
+- `integrations/{email}-google-photos` — the encrypted Google Photos refresh token.
+- `imported_photos/{year}-{email}-{photoId}` — metadata linking an imported photo to an event;
+  image variants live under the private bucket's `data/{year}/imports/` prefix.
 
 The state maps are small maps, replaced as a whole or changed per key with PATCH (the editor
 does this), (`PUT /api/state/{year}/{kind}`); the client updates its
@@ -87,6 +90,8 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   full page (to the bleed, toggles back), border (none / white / black), front/back, reset, hide.
 - A frame without a photo (an empty cell, a letter without one) is drawn as a light area with a
   photo icon; a click on it opens the picker.
+- The bottom toolbar adds an empty rectangular photo frame beside text. It uses the same saved
+  page edit format as other additions; clicking the frame opens the photo picker.
 - While the picker is open, the spread's other photos are highlighted: a click on one trades the
   two photos. The picker marks photos already in the book ("in boek"), counted per spread (a photo
   across both pages of a spread is one), "2×", "3×" when they're on more spreads, and "op kaft"
@@ -96,11 +101,22 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   rechthoek" clears them. A polygon photo keeps its frame (drawn as a wide outline under it).
 - Save status below the book: bouncing dots while saving, a green check when saved, a red "!"
   when it failed (it retries); a fixed size so the bar doesn't jump.
-- The swap picker: search, scope (event / month / this book / year; cover parts, backgrounds and
-  month titles start at "Dit boek", grid photos at their event), people, close-up, sfeerbeeld,
+- The swap picker: search, scope (event / month / this book / year), an independent month filter
+  (cover parts, backgrounds and month titles start at "Dit boek", grid photos at their event),
+  people, close-up, sfeerbeeld,
   "nog niet in het boek" (not on any page or cover). Photo numbers show on every thumbnail and in
   the selection toolbar.
-- Below the book: undo/redo, snapping, add text, reset these pages, save status.
+- Google Photos import uses the Picker API: the user explicitly selects images, Photon downloads
+  them to private storage while Google's authorized URLs are valid, then attaches them to the
+  event whose photo picker was open. OAuth refresh tokens are encrypted before being stored.
+  There's no API to pre-filter what the picker shows, so Photon dedupes on import instead (by a
+  hash of Google's media id) and reports how many of the selection were already in Photon.
+- Connecting and picking happen in the one popup the "Google Foto's verbinden" click opened: once
+  the OAuth round trip lands back on it, it asks its opener (a postMessage handshake, see
+  `lib/googlePhotos.ts`) what to do next and navigates itself there, rather than closing and
+  making the user click a second time to actually open the picker. A session waiting on a pick has
+  an "Annuleren" button that cancels it with Google and lets the picker reopen.
+- Below the book: undo/redo, snapping, add text and photo frames, reset these pages, save status.
 - Snapping (toggle, remembered per browser; Alt = off while held): 2 mm to page edges, margins and
   centre lines, and to other elements' edges, centres and edge + 5 mm gap; pink guides show the match.
 - Keys: arrows nudge 1 mm (shift 5), Delete hides, Esc deselects, ctrl+Z / ctrl+Y.
@@ -159,11 +175,13 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
 - Colour suggestions (`lib/palette.ts`): the colours that stand out in the page's photos (pixels
   grouped by hue and lightness, scored by share and saturation), not their average tone.
 - Frames and text frames resize from their sides too (only the dragged sides snap).
+- Added text and photo frames can be dragged across the visible spread; the edit moves to the
+  destination page. Generated layout elements still cannot be moved between pages.
 - Smart layout (`lib/smart.ts`): the blue buttons above the arrows put the page's photos (and its
   month title) in another arrangement — every split into justified rows, justified columns, one
   large photo beside a column — ranked by how little the photos are cropped, with a heavy penalty
   when a photo's orientation would flip. Spread: one button per page; single page: previous/next.
-- Not editable yet: rotating month titles and captions, moving elements between pages.
+- Not editable yet: rotating month titles and captions, moving generated layout elements between pages.
 
 ## Notes (`lib/notes.ts`, `components/NotesDrawer.tsx`, `scripts/notes.py`)
 

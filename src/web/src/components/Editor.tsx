@@ -428,7 +428,29 @@ export function EditorOverlay({
     }
     // a plain click on one element of a group selects just that one
     if (d.mode === "move" && !d.moved && selection.size > 1) onSelect(new Set([d.sel]));
-    if (d.moved && preview.current) onCommit(preview.current);
+    if (d.moved && preview.current) {
+      let final = preview.current;
+      if (d.mode === "move" && d.targets.length === 1) {
+        const source = d.targets[0];
+        const drop = toMm(e);
+        const destination = items.find((i) => i.kind === "page" && drop.x >= i.dx && drop.x < i.dx + PAGE.w);
+        const elementEdit = final[source.key]?.[source.slot];
+        if (
+          destination && destination.key !== source.key &&
+          (elementEdit?.add === "caption" || elementEdit?.add === "frame")
+        ) {
+          const fromPage = { ...(final[source.key] ?? {}) };
+          const toPage = { ...(final[destination.key] ?? {}) };
+          delete fromPage[source.slot];
+          toPage[source.slot] = { ...elementEdit, x: source.dx + (elementEdit.x ?? source.el.x) - destination.dx };
+          final = { ...final, [destination.key]: toPage };
+          if (Object.keys(fromPage).length) final[source.key] = fromPage;
+          else delete final[source.key];
+          onSelect(new Set([`${destination.key}|${source.slot}`]));
+        }
+      }
+      onCommit(final);
+    }
     preview.current = null;
     onPreview(null);
   };
@@ -696,6 +718,7 @@ const ICONS: Record<string, ReactNode> = {
   magnet: <path d="m6 15-4-4 6.8-6.8a7.8 7.8 0 0 1 11 11L13 22l-4-4 6.4-6.4a2.1 2.1 0 0 0-3-3L6 15M5 8l4 4M12 15l4 4" />,
   text: <path d="M4 7V4h16v3M9 20h6M12 4v16" />,
   addText: <path d="M3 6V4h12v2M7 16h4M9 4v12M17 14v6M14 17h6" />,
+  addFrame: <><rect x="3" y="5" width="14" height="14" rx="1" /><path d="M18 8h3M19.5 6.5v3M18 16h3M19.5 14.5v3" /></>,
   smaller: <path d="M3 18 8 6l5 12M4.7 14h6.6M16 12h6" />,
   bigger: <path d="M3 18 8 6l5 12M4.7 14h6.6M16 12h6M19 9v6" />,
   alignleft: <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />,
@@ -979,6 +1002,7 @@ export function EditBar({
   snap,
   onSnap,
   onAddText,
+  onAddFrame,
   onPage,
   saving,
   onResetPages,
@@ -992,6 +1016,7 @@ export function EditBar({
   snap: boolean;
   onSnap: (on: boolean) => void;
   onAddText: () => void;
+  onAddFrame: () => void;
   onPage: () => void;
   saving: SaveStatus;
   onResetPages: () => void;
@@ -1007,6 +1032,7 @@ export function EditBar({
       <IconBtn icon="magnet" label={snap ? "Snappen staat aan (Alt = even uit)" : "Snappen staat uit"} active={snap} onClick={() => onSnap(!snap)} />
       <IconBtn icon="page" label="Pagina bewerken (achtergrond, vorm, indeling)" onClick={onPage} />
       <IconBtn icon="addText" label="Tekst toevoegen" onClick={onAddText} />
+      <IconBtn icon="addFrame" label="Fotokader toevoegen" onClick={onAddFrame} />
       <IconBtn icon="resetPage" label="Alle wijzigingen op deze pagina's terugdraaien" onClick={onResetPages} />
       <span className="relative">
         <IconBtn icon="note" label="Notities" onClick={onNotes} />

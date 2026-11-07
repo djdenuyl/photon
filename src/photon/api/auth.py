@@ -74,9 +74,14 @@ User = Annotated[Me, Depends(require_user)]
 @router.get("/login")
 async def login(request: Request) -> RedirectResponse:
     base_url = get_settings().base_url
+    client_host = request.client.host if request.client else ""
+    local_vite_proxy = urlsplit(base_url).hostname == "localhost" and client_host in {
+        "127.0.0.1",
+        "::1",
+    }
     # The OAuth state lives in the session cookie, which is per host: start on
     # the host Google will send the user back to (e.g. not the run.app URL).
-    if request.url.netloc != urlsplit(base_url).netloc:
+    if request.url.netloc != urlsplit(base_url).netloc and not local_vite_proxy:
         return RedirectResponse(url=f"{base_url}/api/auth/login")
     return await _oauth.google.authorize_redirect(request, f"{base_url}/api/auth/callback")
 

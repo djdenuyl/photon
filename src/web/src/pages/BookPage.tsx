@@ -319,12 +319,21 @@ export function BookPage() {
     tones,
     onNote: () => addNote(),
   };
+  const addTarget = () => pageItem?.page ?? one?.page ?? current?.pages.find((p) => p.page)?.page ?? null;
   const addText = () => {
-    const target = current ? [...current.pages].reverse().find((p) => p.page) : undefined;
-    if (!target?.page) return;
-    const key = `${target.page.event.id}:${target.page.k}`;
+    const target = addTarget();
+    if (!target) return;
+    const key = `${target.event.id}:${target.k}`;
     const slot = `add${Date.now().toString(36)}`;
     commit(updateElement(edits, key, slot, { add: "caption", box: true, text: "Tekst", x: PAGE.w / 2 - 30, y: PAGE.h / 2 - 8, w: 60, h: 16, size: 5 }));
+    setSelection(new Set([`${key}|${slot}`]));
+  };
+  const addFrame = () => {
+    const target = addTarget();
+    if (!target) return;
+    const key = `${target.event.id}:${target.k}`;
+    const slot = `frame${Date.now().toString(36)}`;
+    commit(updateElement(edits, key, slot, { add: "frame" }));
     setSelection(new Set([`${key}|${slot}`]));
   };
 
@@ -514,6 +523,7 @@ export function BookPage() {
           snap={snap}
           onSnap={setSnap}
           onAddText={addText}
+          onAddFrame={addFrame}
           onPage={() => selectPage()}
           saving={saving}
           notes={openNotes.filter((n) => labelOf(n) !== null).length}
