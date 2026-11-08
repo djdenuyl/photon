@@ -2,9 +2,21 @@
  * Does a text frame's text not fit? Counted in lines × line height, in screen pixels: the
  * element's own scroll sizes are whole numbers of page units (a millimetre each, far too coarse)
  * and include the font's ascent and descent, which for HAPPY DONUTS are much taller than its
- * letters (so "DEEL 2" looked too big for a frame it fits in).
+ * letters (so "DEEL 2" looked too big for a frame it fits in). Turned text is measured with the
+ * turn taken off for a moment (its screen boxes would be the turned ones).
  */
 export function textOverflows(el: HTMLElement): boolean {
+  const turned = el.closest("g[data-rot]");
+  const turn = turned?.getAttribute("transform") ?? null;
+  if (turned && turn) turned.removeAttribute("transform");
+  try {
+    return measure(el);
+  } finally {
+    if (turned && turn) turned.setAttribute("transform", turn);
+  }
+}
+
+function measure(el: HTMLElement): boolean {
   const box = el.getBoundingClientRect();
   const style = getComputedStyle(el);
   const scale = box.width / (parseFloat(style.width) || 1);

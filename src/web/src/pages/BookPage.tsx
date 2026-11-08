@@ -13,7 +13,8 @@ import { PhotoPicker } from "@/components/PhotoPicker";
 import { PhotoSheet } from "@/components/PhotoSheet";
 import { useIsDesktop } from "@/components/Shell";
 import { displayUrl, thumbUrl, useSaveState, useStateMap, useYearData, YEAR } from "@/lib/data";
-import { allPages, applyEdits, parseEdits, serializeEdits, swapPhoto, updateElement, type ElementEdit, type Edits } from "@/lib/edits";
+import { allPages, applyEdits, clearedLayout, copyLayout, parseEdits, pasteLayout, serializeEdits, swapPhoto, updateElement, type CopiedLayout, type ElementEdit, type Edits, type PageEdits } from "@/lib/edits";
+import { collage, overDeRug } from "@/lib/freeform";
 import { buildBooks, PAGE, pageBody, renderPage, renderSpread, type Book, type Page } from "@/lib/layout";
 import { useAutoColors } from "@/lib/contrast";
 import { makeMesh, type Mesh } from "@/lib/mesh";
@@ -98,6 +99,8 @@ export function BookPage() {
   const perPage = choice ?? !desktop;
   const [open, setOpen] = useState<{ photo: Photo; event: PlanEvent | null } | null>(null);
   const [exporting, setExporting] = useState(false);
+  // a page's arrangement, copied to put on another page
+  const [copied, setCopied] = useState<CopiedLayout | null>(null);
 
   // editor state: undo/redo and the live preview while dragging (the edits live in the query cache)
   const [editing, setEditing] = useState(true);
@@ -233,9 +236,69 @@ export function BookPage() {
     const pe = Object.fromEntries(Object.entries(edits[key] ?? {}).filter(([slot]) => !(slot.startsWith("cell") && Number(slot.slice(4)) >= cells.length)));
     commit({ ...edits, [key]: { ...pe, mesh: { mesh, cells } } });
   };
+  // the photos (and month title) a page arranges: smart layout, collage, over de rug
+  const cellsOf = (page: Page): Cell[] => page.elements.flatMap((e): Cell[] => {
+    if (e.type === "month") return [{ slot: e.slot ?? "month", aspect: e.w / e.h }];
+    if (e.type !== "photo" || e.bg || e.shape || e.twin || e.cell !== undefined) return [];
+    const ph = year.data?.photos.get(e.id);
+    return ph ? [{ slot: e.slot ?? e.id, aspect: ph.w / ph.h }] : [];
+  });
+  const setCollage = (page: Page, variant = 0) => {
+    const key = `${page.event.id}:${page.k}`;
+    // a mesh gives way: its photos come back as frames first
+    const plain: Edits = { ...edits, [key]: clearedLayout(edits[key]) };
+    const base = applyEdits(buildBooks(year.data!.plan, year.data!.photos, picks ?? {}), plain).flatMap(allPages).find((q) => `${q.event.id}:${q.k}` === key) ?? page;
+    const pe: PageEdits = { ...plain[key], layout: { layout: "collage" } };
+    for (const [slot, ed] of Object.entries(collage(cellsOf(base), key, variant))) pe[slot] = { ...pe[slot], ...ed };
+    commit({ ...edits, [key]: pe });
+  };
+  // the facing pages of the spread on screen, when there are two
+  const spread = current && current.pages.length === 2 && current.pages[0].page && current.pages[1].page ? [current.pages[0].page, current.pages[1].page] as const : null;
+  const setSpine = () => {
+    if (!spread || !year.data) return;
+    const [l, r] = spread;
+    const lk = `${l.event.id}:${l.k}`, rk = `${r.event.id}:${r.k}`;
+    const plain: Edits = { ...edits, [lk]: clearedLayout(edits[lk]), [rk]: clearedLayout(edits[rk]) };
+    const pages = applyEdits(buildBooks(year.data.plan, year.data.photos, picks ?? {}), plain).flatMap(allPages);
+    const [pl, pr] = [lk, rk].map((k) => pages.find((q) => `${q.event.id}:${q.k}` === k)!);
+    const [cl, cr] = [cellsOf(pl), cellsOf(pr)];
+    // across the spine: the widest photo of the two pages (the left one when it's a tie)
+    const photosOf = (cs: Cell[]) => cs.filter((c) => c.slot !== "month");
+    const widest = [...photosOf(cl).map((c) => ({ c, from: "left" as const })), ...photosOf(cr).map((c) => ({ c, from: "right" as const }))]
+      .sort((a, b) => b.c.aspect - a.c.aspect)[0];
+    if (!widest) return;
+    const out = overDeRug({ key: lk, cells: cl }, { key: rk, cells: cr }, widest.from, widest.c.slot);
+    const next: Edits = { ...plain };
+    for (const [k, pe] of Object.entries(out)) {
+      const merged = { ...next[k] };
+      for (const [slot, ed] of Object.entries(pe)) merged[slot] = { ...merged[slot], ...ed };
+      next[k] = merged;
+    }
+    commit(next);
+  };
+  // back to the proposal: this page's arrangement, and the facing page's half of a spine photo
+  const clearLayout = (key: string) => {
+    const next: Edits = { ...edits, [key]: clearedLayout(edits[key]) };
+    for (const [k, pe] of Object.entries(edits)) {
+      const linked = Object.values(pe).some((ed) => ed.add === "twin" && ed.of?.startsWith(`${key}|`))
+        || Object.values(edits[key] ?? {}).some((ed) => ed.add === "twin" && ed.of?.startsWith(`${k}|`));
+      if (linked && k !== key) next[k] = clearedLayout(pe);
+    }
+    commit(next);
+  };
+  const hasLayout = (key: string) => Object.entries(edits[key] ?? {}).some(([slot, ed]) =>
+    slot === "mesh" || slot === "layout" || ed.add === "twin" || (!ed.add && (ed.x !== undefined || ed.rot !== undefined)))
+    || Object.values(edits).some((pe) => Object.values(pe).some((ed) => ed.add === "twin" && ed.of?.startsWith(`${key}|`)));
+
   // smart layout: the photos (and month title) of a page in the next (or previous) arrangement
   const smart = (page: Page, dir: 1 | -1) => {
     const key = `${page.event.id}:${page.k}`;
+    if (edits[key]?.layout?.layout === "collage") {
+      const at = (smartAt[key] ?? 0) + dir;
+      setCollage(page, ((at % 30) + 30) % 30);
+      setSmartAt({ ...smartAt, [key]: at });
+      return;
+    }
     const mesh = meshOf(key);
     if (mesh) {
       // a mesh layout: another variant of the same kind (other rows, other shakes, shifted hexagons)
@@ -245,12 +308,7 @@ export function BookPage() {
       setSmartAt({ ...smartAt, [key]: at });
       return;
     }
-    const cells: Cell[] = page.elements.flatMap((e): Cell[] => {
-      if (e.type === "month") return [{ slot: e.slot ?? "month", aspect: e.w / e.h }];
-      if (e.type !== "photo" || e.bg || e.shape || e.cell !== undefined) return [];
-      const ph = year.data?.photos.get(e.id);
-      return ph ? [{ slot: e.slot ?? e.id, aspect: ph.w / ph.h }] : [];
-    });
+    const cells = cellsOf(page);
     const m = PAGE.margin;
     const options = arrangements(cells, { x: m, y: m, w: PAGE.w - 2 * m, h: PAGE.h - 2 * m });
     if (!options.length) return;
@@ -328,6 +386,14 @@ export function BookPage() {
     const key = `${target.event.id}:${target.k}`;
     const slot = `add${Date.now().toString(36)}`;
     commit(updateElement(edits, key, slot, { add: "caption", box: true, text: "Tekst", x: PAGE.w / 2 - 30, y: PAGE.h / 2 - 8, w: 60, h: 16, size: 5 }));
+    setSelection(new Set([`${key}|${slot}`]));
+  };
+  const addWord = () => {
+    const target = addTarget();
+    if (!target) return;
+    const key = `${target.event.id}:${target.k}`;
+    const slot = `word${Date.now().toString(36)}`;
+    commit(updateElement(edits, key, slot, { add: "word", text: "Tekst" }));
     setSelection(new Set([`${key}|${slot}`]));
   };
   const addFrame = () => {
@@ -531,6 +597,7 @@ export function BookPage() {
           onSnap={setSnap}
           onAddText={addText}
           onAddFrame={addFrame}
+          onAddWord={addWord}
           onPage={() => selectPage()}
           saving={saving}
           notes={openNotes.filter((n) => labelOf(n) !== null).length}
@@ -556,6 +623,13 @@ export function BookPage() {
           tones={tones}
           hasBgPhoto={pageItem.page.elements.some((e) => e.type === "photo" && e.bg)}
           mesh={meshOf(pageItem.key)}
+          arrangement={edits[pageItem.key]?.layout?.layout === "collage" ? "collage" : Object.values(edits).some((pe) => Object.values(pe).some((ed) => ed.add === "twin" && ed.of?.startsWith(`${pageItem.key}|`))) || Object.values(edits[pageItem.key] ?? {}).some((ed) => ed.add === "twin") ? "spine" : null}
+          canSpine={!!spread && !pageItem.page.cover}
+          hasLayout={hasLayout(pageItem.key)}
+          copied={copied && copied.from !== pageItem.key ? (() => {
+            const from = allPages(book).find((q) => `${q.event.id}:${q.k}` === copied.from);
+            return from ? pageLabel(from) : "een andere pagina";
+          })() : null}
           sides={current.pages.filter(({ page }) => page).length === 2 ? { current: pageItem.dx > 0 ? "right" : "left", pick: selectPage } : undefined}
           a={{
             onColor: (color) => commit(updateElement(edits, pageItem.key, "pagefill", { color, hidden: undefined })),
@@ -574,6 +648,11 @@ export function BookPage() {
               }
             },
             onTemplate: (t) => setMesh(pageItem.page, pageItem.key, t),
+            onCollage: () => setCollage(pageItem.page),
+            onSpine: setSpine,
+            onClearLayout: () => clearLayout(pageItem.key),
+            onCopy: () => setCopied(copyLayout(pageItem.page, edits[pageItem.key])),
+            onPaste: () => copied && commit(pasteLayout(edits, pageItem.page, copied)),
             onGap: (gap) => {
               const m = meshOf(pageItem.key);
               if (m) commit(updateElement(edits, pageItem.key, "mesh", { mesh: { ...m, gap } }));

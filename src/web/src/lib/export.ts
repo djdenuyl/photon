@@ -36,7 +36,7 @@ export async function overflowingText(pages: Page[], photos: Photos): Promise<Se
   return over;
 }
 
-const GOOGLE_FONTS = "https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&family=League+Spartan:wght@900&display=block";
+const GOOGLE_FONTS = "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Open+Sans:wght@400;700&family=League+Spartan:wght@900&display=block";
 const DONUTS = "/data/fonts/happy-donuts.otf";
 const JPEG_QUALITY = 0.92;
 

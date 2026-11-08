@@ -47,13 +47,23 @@ export interface PhotoElement extends Box, Editable {
   focus?: [number, number];
   /** Editor: frame rotation in degrees. */
   rot?: number;
+  /** Editor: the photo turned inside its frame (degrees); it is scaled to keep the frame covered. */
+  irot?: number;
+  /** The facing page's half of a photo across the spine: drawn here, edited on the other page. */
+  twin?: boolean;
 }
+/** Text filled with a photo: the month titles, and "gevulde tekst" added in the editor (slot
+ * "word…"). The text is stretched to its box; a colour fills it instead of the photo. */
 export interface MonthElement extends Box, Editable {
   type: "month";
   name: string;
   photo: string | null;
   zoom?: number;
   focus?: [number, number];
+  rot?: number;
+  irot?: number;
+  font?: FontId;
+  color?: string;
 }
 /** A text frame: the text wraps within its width; what doesn't fit is cut off (the editor warns). */
 export interface CaptionElement extends Box, Editable {
@@ -61,8 +71,10 @@ export interface CaptionElement extends Box, Editable {
   text: string;
   size?: number;
   color?: string;
-  font?: "donuts";
+  /** Unset: Open Sans with a soft halo (the captions of the earlier books). */
+  font?: FontId;
   align?: "left" | "center" | "right";
+  rot?: number;
   /** With color "auto": the colour picked for what lies under the text (set by the editor). */
   autoColor?: string;
 }
@@ -74,6 +86,23 @@ export interface FillElement extends Box, Editable {
   pts: [number, number][];
 }
 
+/** The fonts text can be set in (all loaded by index.html, and embedded in the print files). */
+export type FontId = "sans" | "serif" | "heavy" | "donuts";
+export const FONTS: Record<FontId, { label: string; family: string; weight: number }> = {
+  sans: { label: "Open Sans", family: "'Open Sans', sans-serif", weight: 400 },
+  serif: { label: "Fraunces", family: "'Fraunces', serif", weight: 400 },
+  heavy: { label: "League Spartan", family: "'League Spartan', sans-serif", weight: 900 },
+  donuts: { label: "Happy Donuts", family: "'HAPPY DONUTS', 'Cooper Black', serif", weight: 400 },
+};
+
+/** Font size in points from the page's millimetres (text sizes are in mm, like everything). */
+export const toPt = (mm: number): number => (mm * 72) / 25.4;
+export const fromPt = (pt: number): number => (pt * 25.4) / 72;
+
+/** The size a filled text's letters get: as tall as the box allows, as wide as its text allows. */
+export const filledSize = (e: Pick<MonthElement, "w" | "h" | "name">): number =>
+  Math.min(e.h * 1.25, (e.w / (0.85 * Math.max(1, e.name.length))) * 1.25);
+
 /** The white veil over a background photo, as Albelli does (adjustable per photo). */
 export const BG_VEIL = 0.25;
 
@@ -82,8 +111,8 @@ const LINE = 1.25;
 
 /** A one-line text frame sized to its text (an estimate: the text is not measured), placed by
  * its first baseline. The legacy captions had x/y as left (or right, "end") and baseline − 1.7 × size. */
-export function captionFrame(text: string, x: number, baseline: number, size = CAPTION_SIZE, font?: "donuts", end = false): Box {
-  const w = Math.max(6, text.length * size * (font ? 0.8 : 0.6) + size);
+export function captionFrame(text: string, x: number, baseline: number, size = CAPTION_SIZE, font?: FontId, end = false): Box {
+  const w = Math.max(6, text.length * size * (font === "donuts" || font === "heavy" ? 0.8 : 0.6) + size);
   const h = size * LINE + size * 0.2;
   return { x: end ? x - w : x, y: baseline - size * 0.95, w, h };
 }
@@ -481,10 +510,11 @@ function emptyFrame({ x, y, w, h }: Box): string {
 }
 
 /** <image> placed to cover a box (see `placement`). */
-function placed(photo: Photo | undefined, box: Box, url: UrlFor, zoom = 1, focus?: [number, number]): string {
+function placed(photo: Photo | undefined, box: Box, url: UrlFor, zoom = 1, focus?: [number, number], irot = 0): string {
   if (!photo) return emptyFrame(box);
   const { x, y, w, h } = placement(photo, box, zoom, focus);
-  return `<image href="${url(photo)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"/>`;
+  const turn = irot ? ` transform="rotate(${irot} ${box.x + box.w / 2} ${box.y + box.h / 2})"` : "";
+  return `<image href="${url(photo)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"${turn}/>`;
 }
 
 
@@ -553,7 +583,7 @@ export function coverPages(cover: Cover, bi: number): { back: Page; front: Page 
   return { back: page("back", back), front: page("front", front) };
 }
 
-const DONUTS = "'HAPPY DONUTS', 'Cooper Black', serif";
+const DONUTS = FONTS.donuts.family;
 
 /** The clip outline (and what goes under/over the photo) of a shaped photo. */
 function shapeParts(e: PhotoElement & { shape: Shape }): { clip: string; under: string; over: string } {
@@ -578,13 +608,25 @@ function bledPoly(e: Box, pts: [number, number][]): [number, number][] {
 }
 
 /** The box a photo is placed to cover: its frame, or for a polygon photo touching the page's edge
- * its outline including the bleed, so the photo reaches the cut. */
+ * its outline including the bleed, so the photo reaches the cut. A photo turned inside its frame
+ * covers the box's turned bounding box (same centre), so no corner of the frame is left empty. */
 export function photoBox(e: Element): Box {
-  if (e.type !== "photo" || e.shape?.kind !== "poly") return e.type === "fill" ? { x: 0, y: 0, w: PAGE.w, h: PAGE.h } : e;
-  const pts = bledPoly(e, e.shape.pts);
-  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
-  const x = Math.min(...xs), y = Math.min(...ys);
-  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  if (e.type === "fill" || e.type === "caption") return { x: e.x, y: e.y, w: e.w, h: e.h };
+  let box: Box = e;
+  if (e.type === "photo" && e.shape?.kind === "poly") {
+    const pts = bledPoly(e, e.shape.pts);
+    const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    box = { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }
+  return turned(box, e.irot ?? 0);
+}
+
+function turned(box: Box, deg: number): Box {
+  if (!deg) return box;
+  const a = (deg * Math.PI) / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+  const w = box.w * c + box.h * s, h = box.w * s + box.h * c;
+  return { x: box.x + box.w / 2 - w / 2, y: box.y + box.h / 2 - h / 2, w, h };
 }
 
 /**
@@ -626,25 +668,32 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
     } else if (e.type === "photo" && e.shape) {
       const { clip, under, over } = shapeParts({ ...e, shape: e.shape });
       const cid = `${id}c${parts.length}`;
-      const inner = `${under}<clipPath id="${cid}">${clip}</clipPath><g clip-path="url(#${cid})" class="lay-photo" data-photo="${e.id}">${placed(photos.get(e.id), photoBox(e), url, e.zoom, e.focus)}${over}</g>`;
+      const inner = `${under}<clipPath id="${cid}">${clip}</clipPath><g clip-path="url(#${cid})" class="lay-photo" data-photo="${e.id}">${placed(photos.get(e.id), photoBox(e), url, e.zoom, e.focus, e.irot)}${over}</g>`;
       parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     } else if (e.type === "photo") {
       const border = e.border !== undefined ? e.border : e.frame ? { w: 1.5, color: "#fff" } : null;
       const veil = e.veil ?? (e.bg ? BG_VEIL : 0);
       const frame = border && border.w > 0 ? `<rect x="${e.x - border.w}" y="${e.y - border.w}" width="${e.w + 2 * border.w}" height="${e.h + 2 * border.w}" fill="${border.color}"/>` : "";
-      const inner = `${frame}<svg x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" viewBox="${e.x} ${e.y} ${e.w} ${e.h}" overflow="hidden" class="lay-photo${e.big ? " big" : ""}" data-photo="${e.id}" data-event="${p.event.id}">${placed(photos.get(e.id), e, url, e.zoom, e.focus)}${veil ? `<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" fill="#fff" opacity="${veil}"/>` : ""}</svg>`;
+      const inner = `${frame}<svg x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" viewBox="${e.x} ${e.y} ${e.w} ${e.h}" overflow="hidden" class="lay-photo${e.big ? " big" : ""}" data-photo="${e.id}" data-event="${p.event.id}">${placed(photos.get(e.id), photoBox(e), url, e.zoom, e.focus, e.irot)}${veil ? `<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" fill="#fff" opacity="${veil}"/>` : ""}</svg>`;
       parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     } else if (e.type === "month") {
-      const size = Math.min(e.h * 1.25, (e.w / (0.85 * e.name.length)) * 1.25);
-      const t = `<text x="${e.x + e.w / 2}" y="${e.y + e.h / 2 + size * 0.35}" text-anchor="middle" font-family="'League Spartan', sans-serif" font-weight="900" font-size="${size}" textLength="${e.w}" lengthAdjust="spacingAndGlyphs">${esc(e.name.toUpperCase())}</text>`;
+      const size = filledSize(e), f = FONTS[e.font ?? "heavy"];
+      // the month titles are capitals; a filled text added in the editor is as typed
+      const text = e.slot === "month" ? e.name.toUpperCase() : e.name;
+      const attrs = `x="${e.x + e.w / 2}" y="${e.y + e.h / 2 + size * 0.35}" text-anchor="middle" font-family="${f.family}" font-weight="${f.weight}" font-size="${size}" textLength="${e.w}" lengthAdjust="spacingAndGlyphs"`;
       const cid = `${id}m${parts.length}`;
-      parts.push(`<clipPath id="${cid}">${t}</clipPath><g clip-path="url(#${cid})">${placed(photos.get(e.photo ?? ""), e, url, e.zoom, e.focus)}</g>`);
+      const inner = e.color
+        ? `<text ${attrs} fill="${e.color}">${esc(text)}</text>`
+        : `<clipPath id="${cid}"><text ${attrs}>${esc(text)}</text></clipPath><g clip-path="url(#${cid})">${placed(photos.get(e.photo ?? ""), photoBox(e), url, e.zoom, e.focus, e.irot)}</g>`;
+      parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     } else {
       const size = e.size ?? CAPTION_SIZE, color = e.color === "auto" ? (e.autoColor ?? "#fff") : (e.color ?? "#fff");
-      const font = e.font === "donuts" ? DONUTS : "'Open Sans', sans-serif";
+      const f = FONTS[e.font ?? "sans"];
       const halo = e.font ? "" : `text-shadow:0 0 ${size * 0.25}px ${color === "#fff" ? "rgba(0,0,0,.45)" : "rgba(255,255,255,.45)"};`;
-      const style = `margin:0;width:100%;height:100%;overflow:hidden;font-family:${font};font-size:${size}px;line-height:${LINE};color:${color};text-align:${e.align ?? "left"};white-space:pre-wrap;overflow-wrap:break-word;${halo}`;
-      parts.push(`<foreignObject x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}"><div xmlns="http://www.w3.org/1999/xhtml" data-cap="${p.event.id}:${p.k}|${e.slot ?? ""}" style="${style.replace(/"/g, "&quot;")}">${esc(e.text)}</div></foreignObject>`);
+      const style = `margin:0;width:100%;height:100%;overflow:hidden;font-family:${f.family};font-weight:${f.weight};font-size:${size}px;line-height:${LINE};color:${color};text-align:${e.align ?? "left"};white-space:pre-wrap;overflow-wrap:break-word;${halo}`;
+      const inner = `<foreignObject x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}"><div xmlns="http://www.w3.org/1999/xhtml" data-cap="${p.event.id}:${p.k}|${e.slot ?? ""}" style="${style.replace(/"/g, "&quot;")}">${esc(e.text)}</div></foreignObject>`;
+      // data-rot: the text-fit check measures with the rotation taken off (lib/overflow.ts)
+      parts.push(e.rot ? `<g data-rot="" transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     }
   }
   return parts.join("");

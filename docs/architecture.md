@@ -78,8 +78,9 @@ The book opens in the editor ("Bewerken"; "Bekijken" hides the controls). Edits 
 generated layout, so a re-layout keeps them. They are keyed by page (`eventId:k`, k = the page
 within its event; the cover `omslagN-back:0` / `omslagN-front:0`) and slot: the photo the layout
 put there, `letter0…14` / `shard0…3` / `background` / `label` on the cover, `month`, `cap0…` for
-captions, `add…` for text added in the editor. An edit can set `photo, x, y, w, h, zoom, focus,
-rot, z, border, text, size, color, hidden`. `applyEdits` applies them after `buildBooks` and
+captions, `add…` for text added in the editor, `word…` for filled text, `frame…` for photo frames,
+`twin…` for the facing half of a photo across the spine, `layout` for a collage. An edit can set
+`photo, x, y, w, h, zoom, focus, rot, irot, z, border, text, size, color, font, align, hidden`. `applyEdits` applies them after `buildBooks` and
 orders each page by `z` (default: layout order). A swap with a photo already in the book trades
 places (grid photos only; cover parts, backgrounds and month titles just take the new photo).
 
@@ -91,8 +92,25 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   Drag moves (backgrounds stay put), corner handles resize (captions scale their text), the
   see-through centre handle moves the photo inside its frame.
 - The selection toolbar floats next to it, icons only with a label on hover. It offers what fits
-  the selection: text field and size/colour (captions, month titles), swap, zoom, rotate, big photo,
-  full page (to the bleed, toggles back), border (none / white / black), front/back, reset, hide.
+  the selection: text field, size, font and colour (captions, filled text), swap, zoom, turn the
+  photo in its frame, rotate, big photo, full page (to the bleed, toggles back), border (none /
+  white / black), front/back, align/distribute (several selected), reset, hide.
+- Rotate: the round handle hanging below the selection turns photos, cover parts, text and filled
+  text around their centre (snapping to square within 4°; Alt = free), and ↺/↻ step 3°. Turned
+  text is measured for fit with the turn taken off (`lib/overflow.ts`).
+- A photo turned inside its frame (`irot`; the "Foto draaien in het kader" menu: quarter turns and a
+  ±45° tilt): it covers the frame's turned bounding box around the same centre (`photoBox`), so no
+  corner goes empty; panning follows the photo's own axes.
+- Fonts (`FONTS`): Open Sans (captions' default, with its soft halo), Fraunces, League Spartan
+  (filled text's default) and HAPPY DONUTS, each shown in itself in the font menu. Sizes are kept
+  in mm and shown in points (`toPt`): a caption's size can be typed or stepped with A−/A+; a filled
+  text's size follows its box and is shown read-only.
+- Filled text ("Gevulde tekst toevoegen" below the book, `add: "word"`): letters filled with a photo
+  like the month titles (same element, `type: "month"`), as typed rather than in capitals; it takes a
+  photo by a click like an empty frame, or a colour ("Gevuld met de foto" switches back). Month
+  titles take a font and colour the same way.
+- Align and distribute (several selected): left, centre, right, top, middle, bottom of the
+  selection's outer box (on the spread), and equal space side by side or one above the other.
 - A frame without a photo (an empty cell, a letter without one) is drawn as a light area with a
   photo icon; a click on it opens the picker.
 - The bottom toolbar adds an empty rectangular photo frame beside text. It uses the same saved
@@ -128,7 +146,8 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   `lib/googlePhotos.ts`) what to do next and navigates itself there, rather than closing and
   making the user click a second time to actually open the picker. A session waiting on a pick has
   an "Annuleren" button that cancels it with Google and lets the picker reopen.
-- Below the book: undo/redo, snapping, add text and photo frames, reset these pages, save status.
+- Below the book: undo/redo, snapping, page menu, add text, photo frames and filled text, reset
+  these pages, notes, save status.
 - Snapping (toggle, remembered per browser; Alt = off while held): 2 mm to page edges, margins and
   centre lines, and to other elements' edges, centres and edge + 5 mm gap; pink guides show the match.
 - Keys: arrows nudge 1 mm (shift 5), Delete hides, Esc deselects, ctrl+Z / ctrl+Y.
@@ -160,7 +179,11 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
 - The page itself: a click on an empty spot, or the page button in the bar below the book, selects
   it and opens the page menu (`PagePanel`; in a spread it switches between the left and right
   page): colour, shape, "+ Kleurvlak", background photo (`add: "photo"`), notes, layouts. The
-  page colour's points stay on the page; points on its edge are drawn on into the bleed.
+  page colour's points stay on the page; points on its edge are drawn on into the bleed. Its layout
+  section also copies a page's arrangement ("Indeling kopiëren") and puts it on another page
+  ("Plakken", `copyLayout`/`pasteLayout`: the mesh with this page's photos in its cells, or the
+  frames given to this page's photos in reading order), and goes back to the proposal
+  (`clearedLayout`: photo swaps, zoom and what was added stay).
 - One side panel (`Panel`) for the photo picker, the page menu and the notes, one at a time:
   a card on the right on desktop, a sheet above the bottom bar on a phone; it doesn't block the
   book. On a phone the selection's toolbar replaces the bottom bar (one scrolling row, ✕ to
@@ -171,8 +194,10 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   cells; each cell is drawn inset by half the gap, so gaps stay even when points move. Templates:
   Raster (rows within the margins), Schuin (rows with shaken points, within the margins unless
   "Tot in de afloop" is on — full bleed cut the outer photos at the trim; like 2022 p. 32–33)
-  and Honingraat (at least 14 hexagons, full bleed, like 2022 p. 3; cells beyond the page's photos
-  stay empty). A mesh replaces the page's plain photos; month titles, captions and
+  Honingraat (at least 14 hexagons, full bleed, like 2022 p. 3; cells beyond the page's photos
+  stay empty), Banen (parallel slanted stripes, one row up to four photos, then two or three) and
+  Mozaïek (one block of 55–65% of the page, the rest split along their long side; a neighbour's
+  corner on a block's side is a point of it, so they move together). A mesh replaces the page's plain photos; month titles, captions and
   backgrounds stay. Cells (`cell0…`) can be swapped, zoomed and panned (drag inside), not moved.
   The mesh's points (where the gaps meet) are always shown and can be dragged; with a cell or the
   page selected every side gets a "+" (a new point, in both cells along it: `splitEdge`) and a
@@ -193,7 +218,15 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   month title) in another arrangement — every split into justified rows, justified columns, one
   large photo beside a column — ranked by how little the photos are cropped, with a heavy penalty
   when a photo's orientation would flip. Spread: one button per page; single page: previous/next.
-- Not editable yet: rotating month titles and captions, moving generated layout elements between pages.
+- Free arrangements (`lib/freeform.ts`): Collage puts the page's photos (and month title) on a loose
+  grid, each about 1.15 cells big at its own proportions so they overlap, turned up to 4–9°, in a
+  2.5 mm white border; the page is marked (`layout`) so the smart-layout buttons give other
+  collages. Over de rug (spread view only) makes the widest photo of the two pages a band over the
+  top half of both, from margin to margin; its edit stays on its own page with a box past the fold,
+  and the facing page gets a `twin` that draws the same photo a page width over (`resolveTwins`).
+  The twin isn't an editor item: the photo is selected, moved and swapped as one, across the spread.
+  The other photos of each page are arranged under the band (the best smart arrangement).
+- Not editable yet: moving generated layout elements between pages.
 
 ## Print and export (`lib/print.ts`, `lib/export.ts`, `components/ExportModal.tsx`)
 

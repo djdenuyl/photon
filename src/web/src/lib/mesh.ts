@@ -1,13 +1,14 @@
 // Page layouts as a mesh: points shared by the photo cells around them. Moving a point reshapes
 // every cell that uses it, and each cell is drawn inset by half the gap, so the white gaps stay
-// equally wide however the points move. Three templates: rows (Raster), rows with shaken points
-// (Schuin, the "shattered" spreads of 2022) and hexagons (Honingraat, 2022 page 3). Pure.
+// equally wide however the points move. Templates: rows (Raster), rows with shaken points (Schuin,
+// the "shattered" spreads of 2022), hexagons (Honingraat, 2022 page 3), parallel slanted stripes
+// (Banen) and one large block with smaller ones around it (Mozaïek, the 2020–2021 pages). Pure.
 import type { Box } from "./layout";
 
 export type Pt = [number, number];
 
 export interface Mesh {
-  template: "raster" | "schuin" | "honingraat";
+  template: "raster" | "schuin" | "honingraat" | "banen" | "mozaiek";
   verts: Pt[];
   /** Each cell: its points (indices into verts), in order around it. */
   cells: number[][];
@@ -51,38 +52,91 @@ function rowSplit(n: number, box: Box, variant = 0): number[] {
   return out.filter((k) => k > 0);
 }
 
-/** Rows of cells; where rows meet, every split point of both rows is on the line (so a cell's
- * edge includes its neighbours' corners and stays shared when they move). */
-function rows(n: number, box: Box, variant = 0): { verts: Pt[]; cells: number[][] } {
-  const counts = rowSplit(n, box, variant);
-  const lean = [[-0.12, 0.18], [0.2, -0.15], [0, 0.25], [-0.22, 0.05]][variant % 4];
+/** Rows of cells whose splits may lean (`xAt` gives a split's x on the row's top and bottom line).
+ * Where rows meet, every split point of both rows is on the line, so a cell's edge includes its
+ * neighbours' corners and stays shared when they move. */
+function stripes(counts: number[], box: Box, xAt: (r: number, i: number, top: boolean) => number): { verts: Pt[]; cells: number[][] } {
   const v = new Verts();
   const ys = counts.map((_, r) => box.y + (box.h * r) / counts.length).concat(box.y + box.h);
-  // stagger the splits so rows don't line up into a plain grid
-  const splits = counts.map((k, r) =>
-    Array.from({ length: k + 1 }, (_, i) => {
-      if (i === 0 || i === k) return i === 0 ? box.x : box.x + box.w;
-      return box.x + (box.w * (i + lean[r % 2])) / k;
-    }),
-  );
-  const line = (l: number) => [...new Set([...(splits[l - 1] ?? []), ...(splits[l] ?? [])].map((x) => Math.round(x * 100) / 100))].sort((a, b) => a - b);
+  const splits = (top: boolean) => counts.map((k, r) => Array.from({ length: k + 1 }, (_, i) => (i === 0 ? box.x : i === k ? box.x + box.w : xAt(r, i, top))));
+  const tops = splits(true), bottoms = splits(false);
+  const line = (l: number) => [...new Set([...(bottoms[l - 1] ?? []), ...(tops[l] ?? [])].map((x) => Math.round(x * 100) / 100))].sort((a, b) => a - b);
+  const within = (xs: number[], a: number, b: number) => xs.filter((x) => x >= a - 0.01 && x <= b + 0.01);
   const cells: number[][] = [];
   counts.forEach((k, r) => {
     const top = line(r), bottom = line(r + 1);
     for (let i = 0; i < k; i++) {
-      const a = splits[r][i], b = splits[r][i + 1];
-      const inside = (xs: number[]) => xs.filter((x) => x >= a - 0.01 && x <= b + 0.01);
       cells.push([
-        ...inside(top).map((x) => v.at(x, ys[r])),
-        ...inside(bottom).reverse().map((x) => v.at(x, ys[r + 1])),
+        ...within(top, tops[r][i], tops[r][i + 1]).map((x) => v.at(x, ys[r])),
+        ...within(bottom, bottoms[r][i], bottoms[r][i + 1]).reverse().map((x) => v.at(x, ys[r + 1])),
       ]);
     }
   });
   return { verts: v.list, cells };
 }
 
+/** Rows with their splits staggered, so they don't line up into a plain grid. */
+function rows(n: number, box: Box, variant = 0): { verts: Pt[]; cells: number[][] } {
+  const counts = rowSplit(n, box, variant);
+  const lean = [[-0.12, 0.18], [0.2, -0.15], [0, 0.25], [-0.22, 0.05]][variant % 4];
+  return stripes(counts, box, (r, i) => box.x + (box.w * (i + lean[r % 2])) / counts[r]);
+}
+
+/** Parallel slanted stripes: one row up to four photos, then two or three rows. */
+function bands(n: number, box: Box, variant = 0): { verts: Pt[]; cells: number[][] } {
+  const nrows = n <= 4 ? 1 : n <= 8 ? 2 : 3;
+  const counts = Array.from({ length: nrows }, (_, r) => Math.floor((n * (r + 1)) / nrows) - Math.floor((n * r) / nrows)).filter((k) => k > 0);
+  const slope = [0.22, -0.22, 0.38, -0.38][variant % 4];
+  const rowH = box.h / counts.length;
+  return stripes(counts, box, (r, i, top) => box.x + (box.w * i) / counts[r] + ((top ? 1 : -1) * slope * rowH) / 2);
+}
+
+/** One large block (55–65% of the page) and the rest split into smaller ones, each time the
+ * largest along its long side. Corners of neighbours on a block's side become points of it. */
+function mosaic(n: number, box: Box, variant = 0): { verts: Pt[]; cells: number[][] } {
+  const rnd = random(`mozaiek#${variant}`);
+  const rects: Box[] = [];
+  if (n <= 1) rects.push(box);
+  else {
+    const t = 0.55 + rnd() * 0.1;
+    const side = variant % 4; // the large block on the left, top, right or bottom
+    const vertical = side % 2 === 0;
+    const first = side < 2;
+    const bigW = vertical ? box.w * t : box.w, bigH = vertical ? box.h : box.h * t;
+    const big: Box = { x: vertical && !first ? box.x + box.w - bigW : box.x, y: !vertical && !first ? box.y + box.h - bigH : box.y, w: bigW, h: bigH };
+    const rest: Box = vertical
+      ? { x: first ? box.x + bigW : box.x, y: box.y, w: box.w - bigW, h: box.h }
+      : { x: box.x, y: first ? box.y + bigH : box.y, w: box.w, h: box.h - bigH };
+    rects.push(big, rest);
+    while (rects.length < n) {
+      let k = 1;
+      for (let i = 2; i < rects.length; i++) if (rects[i].w * rects[i].h > rects[k].w * rects[k].h) k = i;
+      const r = rects[k], f = 0.4 + rnd() * 0.2;
+      const across = r.w / r.h > 1.1 || (r.w / r.h > 0.8 && rnd() < 0.5);
+      const parts: [Box, Box] = across
+        ? [{ ...r, w: r.w * f }, { ...r, x: r.x + r.w * f, w: r.w * (1 - f) }]
+        : [{ ...r, h: r.h * f }, { ...r, y: r.y + r.h * f, h: r.h * (1 - f) }];
+      rects.splice(k, 1, ...parts);
+    }
+  }
+  const corners = rects.flatMap((r): Pt[] => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]);
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  const v = new Verts();
+  const cells = rects.map((r) => {
+    const x1 = r.x + r.w, y1 = r.y + r.h;
+    const on = (f: (p: Pt) => boolean, key: (p: Pt) => number) =>
+      [...new Map(corners.filter(f).map((p): [string, Pt] => [`${Math.round(p[0] * 100)},${Math.round(p[1] * 100)}`, p])).values()].sort((a, b) => key(a) - key(b));
+    const top = on((p) => near(p[1], r.y) && p[0] >= r.x - 0.01 && p[0] <= x1 + 0.01, (p) => p[0]);
+    const right = on((p) => near(p[0], x1) && p[1] > r.y + 0.01 && p[1] <= y1 + 0.01, (p) => p[1]);
+    const bottom = on((p) => near(p[1], y1) && p[0] >= r.x - 0.01 && p[0] < x1 - 0.01, (p) => -p[0]);
+    const left = on((p) => near(p[0], r.x) && p[1] > r.y + 0.01 && p[1] < y1 - 0.01, (p) => -p[1]);
+    return [...top, ...right, ...bottom, ...left].map((p) => v.at(p[0], p[1]));
+  });
+  return { verts: v.list, cells };
+}
+
 /** A small deterministic random (the same page gets the same shapes). */
-function random(seed: string): () => number {
+export function random(seed: string): () => number {
   let h = 2166136261;
   for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return () => {
@@ -123,13 +177,15 @@ function hexagons(n: number, box: Box, variant = 0): { verts: Pt[]; cells: numbe
  * a shifted honeycomb): the smart-layout buttons step through them. */
 export function makeMesh(template: Mesh["template"], n: number, seed: string, opts?: { gap?: number; bleed?: boolean; variant?: number }): Mesh {
   const variant = opts?.variant ?? 0;
-  const gap = opts?.gap ?? (template === "raster" ? 5 : 3);
+  const gap = opts?.gap ?? (template === "raster" || template === "mozaiek" ? 5 : 3);
   // within the margins unless asked (a full-bleed shattered page loses its outer photos' edges
   // at the cut); the honeycomb is meant to run off the page
   const bleed = opts?.bleed ?? template === "honingraat";
   const box = domain(gap, bleed);
   // a honeycomb needs small cells to read as one (2022 had 17 on a page): extra cells get more photos
   if (template === "honingraat") return { template, gap, bleed, ...hexagons(Math.max(n, 14), box, variant) };
+  if (template === "banen") return { template, gap, bleed, ...bands(n, box, variant) };
+  if (template === "mozaiek") return { template, gap, bleed, ...mosaic(n, box, variant) };
   const m = rows(n, box, variant);
   if (template === "schuin") {
     const rnd = random(`${seed}#${variant}`);

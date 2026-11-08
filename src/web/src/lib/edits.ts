@@ -5,7 +5,7 @@
 // fixed name for cover parts ("letter3", "shard0", "background", "label"), "month" for the month
 // title and "cap0", "cap1"… for captions. So edits survive a re-layout as long as the event keeps
 // its pages. Stored per page as JSON strings in the `edits` state map.
-import { CAPTION_SIZE, captionFrame, PAGE, type Book, type Border, type Box, type CaptionElement, type Element, type FillElement, type Page, type PhotoElement } from "./layout";
+import { CAPTION_SIZE, captionFrame, PAGE, type Book, type Border, type Box, type CaptionElement, type Element, type FillElement, type FontId, type Page, type PhotoElement } from "./layout";
 import { bboxOf, cellPolygons, type Mesh, type Pt } from "./mesh";
 import type { StringMap } from "./types";
 
@@ -19,6 +19,8 @@ export interface ElementEdit {
   zoom?: number;
   focus?: [number, number];
   rot?: number;
+  /** Photos, filled text: the photo turned inside its frame (degrees). */
+  irot?: number;
   hidden?: boolean;
   z?: number;
   border?: Border | null;
@@ -29,8 +31,14 @@ export interface ElementEdit {
   size?: number;
   color?: string;
   align?: "left" | "center" | "right";
-  /** An element added in the editor (not from the layout). */
-  add?: "caption" | "fill" | "photo" | "frame";
+  font?: FontId;
+  /** An element added in the editor (not from the layout). "word": text filled with a photo, like
+   * the month titles; "twin": the facing page's half of a photo across the spine (`of`). */
+  add?: "caption" | "fill" | "photo" | "frame" | "word" | "twin";
+  /** A twin's photo element: `pageKey|slot` on the facing page. */
+  of?: string;
+  /** Slot "layout": the page is a free arrangement (its smart-layout buttons give other ones). */
+  layout?: "collage";
   /** Fills: their corner points (mm). */
   pts?: Pt[];
   /** Slot "mesh": the page laid out as a mesh of photo cells, and the photo per cell. */
@@ -67,7 +75,7 @@ export function serializeEdits(edits: Edits): StringMap {
   return out;
 }
 
-const GEOMETRY = ["x", "y", "w", "h", "zoom", "rot"] as const;
+const GEOMETRY = ["x", "y", "w", "h", "zoom", "rot", "irot"] as const;
 
 /** Every page of a book, the cover included. */
 export const allPages = (book: Book): Page[] => [book.covers.back, book.covers.front, ...book.pages];
@@ -115,6 +123,12 @@ function baseElements(page: Page, pe: PageEdits | undefined): Element[] {
       base.push({ type: "photo", id: ed.photo ?? "", slot, x: ed.x ?? (PAGE.w - w) / 2, y: ed.y ?? (PAGE.h - h) / 2, w, h, z: 100 + base.length });
     } else if (ed.add === "fill") {
       base.push(fill(slot, "#f2c94c", [[60, 80], [150, 80], [150, 200], [60, 200]], 0.25));
+    } else if (ed.add === "word") {
+      const w = 150, h = 42;
+      base.push({ type: "month", name: ed.text ?? "Tekst", photo: null, slot, x: (PAGE.w - w) / 2, y: (PAGE.h - h) / 2, w, h, z: 900 });
+    } else if (ed.add === "twin") {
+      // drawn from its source once every page has its edits (resolveTwins)
+      base.push({ type: "photo", id: "", slot, twin: true, x: 0, y: 0, w: 1, h: 1, z: 0 });
     }
   }
   return base;
@@ -136,7 +150,7 @@ function applyPage(page: Page, pe: PageEdits | undefined): void {
       const o = { ...e, z };
       if (ed?.photo !== undefined) o.id = ed.photo;
       // a mesh cell keeps its shape: only zoom (and focus, photo) apply
-      const keys = e.cell === undefined ? GEOMETRY : (["zoom"] as const);
+      const keys = e.cell === undefined ? GEOMETRY : (["zoom", "irot"] as const);
       for (const k of keys) if (ed?.[k] !== undefined) o[k] = ed[k];
       if (ed?.focus) o.focus = ed.focus;
       if (ed?.border !== undefined) o.border = ed.border;
@@ -152,8 +166,10 @@ function applyPage(page: Page, pe: PageEdits | undefined): void {
       const o = { ...e, z };
       if (ed?.photo !== undefined) o.photo = ed.photo;
       if (ed?.text !== undefined) o.name = ed.text;
-      for (const k of ["x", "y", "w", "h", "zoom"] as const) if (ed?.[k] !== undefined) o[k] = ed[k];
+      for (const k of ["x", "y", "w", "h", "zoom", "rot", "irot"] as const) if (ed?.[k] !== undefined) o[k] = ed[k];
       if (ed?.focus) o.focus = ed.focus;
+      if (ed && "font" in ed) o.font = ed.font;
+      if (ed && "color" in ed) o.color = ed.color || undefined;
       out.push(o);
     } else if (e.type === "fill") {
       const o = { ...e, z };
@@ -177,6 +193,8 @@ function captionWith(o: CaptionElement, ed: ElementEdit | undefined): CaptionEle
   if (ed.size !== undefined) o.size = ed.size;
   if (ed.color !== undefined) o.color = ed.color;
   if (ed.align !== undefined) o.align = ed.align;
+  if (ed.rot !== undefined) o.rot = ed.rot;
+  if ("font" in ed) o.font = ed.font;
   if (ed.box) {
     for (const k of ["x", "y", "w", "h"] as const) if (ed[k] !== undefined) o[k] = ed[k];
   } else if (ed.x !== undefined || ed.y !== undefined || ed.size !== undefined || ed.text !== undefined) {
@@ -191,8 +209,29 @@ function captionWith(o: CaptionElement, ed: ElementEdit | undefined): CaptionEle
 
 /** The layout with the edits applied (mutates and returns the books). */
 export function applyEdits(books: Book[], edits: Edits): Book[] {
-  for (const book of books) for (const page of allPages(book)) applyPage(page, edits[pageKey(page)]);
+  for (const book of books) {
+    for (const page of allPages(book)) applyPage(page, edits[pageKey(page)]);
+    resolveTwins(book, edits);
+  }
   return books;
+}
+
+/** A photo across the spine lives on one page, its box running past the page's edge; the facing
+ * page draws the same photo shifted by a page width, so the halves meet at the fold. */
+function resolveTwins(book: Book, edits: Edits): void {
+  const pages = new Map(book.pages.map((p, i) => [pageKey(p), { page: p, i }]));
+  for (const [i, page] of book.pages.entries()) {
+    if (!page.elements.some((e) => e.type === "photo" && e.twin)) continue;
+    page.elements = page.elements.flatMap((e): Element[] => {
+      if (e.type !== "photo" || !e.twin) return [e];
+      const [key, slot] = (edits[pageKey(page)]?.[e.slot ?? ""]?.of ?? "").split("|");
+      const src = pages.get(key);
+      const el = src?.page.elements.find((x) => x.slot === slot);
+      if (!src || el?.type !== "photo" || el.twin) return [];
+      const dx = src.i < i ? -PAGE.w : PAGE.w;
+      return [{ ...el, x: el.x + dx, slot: e.slot, twin: true, big: false }];
+    }).sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+  }
 }
 
 /** Where a photo currently is in the book's pages (not the cover, not as a background). */
@@ -200,7 +239,7 @@ export function findPhoto(books: Book[], photoId: string): { page: Page; slot: s
   for (const book of books) {
     for (const page of book.pages) {
       for (const e of page.elements) {
-        if (e.type === "photo" && !e.bg && e.id === photoId) return { page, slot: e.slot ?? e.id };
+        if (e.type === "photo" && !e.bg && !e.twin && e.id === photoId) return { page, slot: e.slot ?? e.id };
       }
     }
   }
@@ -212,7 +251,7 @@ export function updateElement(edits: Edits, key: string, slot: string, change: E
   const prev = page[slot];
   // resetting an added caption keeps it (with its text and place); only its other changes go
   if (change === null) {
-    if (prev?.add) page[slot] = { add: prev.add, text: prev.text, x: prev.x, y: prev.y, w: prev.w, h: prev.h, box: prev.box };
+    if (prev?.add) page[slot] = { add: prev.add, of: prev.of, text: prev.text, x: prev.x, y: prev.y, w: prev.w, h: prev.h, box: prev.box };
     else delete page[slot];
   } else page[slot] = { ...(prev ?? {}), ...change };
   return { ...edits, [key]: page };
@@ -230,3 +269,75 @@ export function swapPhoto(books: Book[], edits: Edits, key: string, slot: string
 }
 
 export const boxOf = (e: Box): Box => ({ x: e.x, y: e.y, w: e.w, h: e.h });
+
+/* ---------- a page's arrangement: copy it to another page, or clear it ---------- */
+
+/** A photo frame of the page's own arrangement (not a background, mesh cell, twin or cover part). */
+const arranged = (page: Page) => (e: Element): e is PhotoElement =>
+  e.type === "photo" && !e.bg && !e.twin && e.cell === undefined && (!e.shape || (e.shape.kind === "poly" && !page.cover));
+/** Top to bottom in bands of 20 mm, then left to right. */
+const reading = (a: Box, b: Box) => Math.round(a.y / 20) - Math.round(b.y / 20) || a.x - b.x;
+
+export interface CopiedLayout {
+  /** The page it came from (`pageKey`). */
+  from: string;
+  mesh?: Mesh;
+  /** The photo frames in reading order. */
+  frames: ElementEdit[];
+  month?: ElementEdit;
+  collage?: boolean;
+}
+
+export function copyLayout(page: Page, pe: PageEdits | undefined): CopiedLayout {
+  const frames = page.elements.filter(arranged(page)).sort(reading).map((e): ElementEdit => {
+    const pts = e.shape?.kind === "poly" ? e.shape.pts.map(([u, v]): Pt => [e.x + u * e.w, e.y + v * e.h]) : undefined;
+    return { x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot ?? 0, border: e.border, pts, z: e.z };
+  });
+  const m = page.elements.find((e) => e.type === "month");
+  return {
+    from: pageKey(page),
+    mesh: pe?.mesh?.mesh,
+    frames,
+    month: m ? { x: m.x, y: m.y, w: m.w, h: m.h, rot: m.type === "month" ? m.rot : undefined } : undefined,
+    collage: pe?.layout?.layout === "collage",
+  };
+}
+
+const ARRANGEMENT = ["x", "y", "w", "h", "rot", "pts", "border", "z"] as const;
+
+/** A page's edits without its arrangement: no mesh or collage, no twin, the layout's own photos
+ * and month title back in their places (photo swaps, zoom and what was added stay). */
+export function clearedLayout(pe: PageEdits | undefined): PageEdits {
+  const out: PageEdits = {};
+  for (const [slot, ed] of Object.entries(pe ?? {})) {
+    if (slot === "mesh" || slot === "layout" || slot.startsWith("cell") || ed.add === "twin") continue;
+    if (ed.add) {
+      out[slot] = ed;
+      continue;
+    }
+    const rest = { ...ed };
+    for (const k of ARRANGEMENT) delete rest[k];
+    if (Object.keys(rest).length) out[slot] = rest;
+  }
+  return out;
+}
+
+/** Another page's arrangement on this page: its mesh with this page's photos, or its frames given
+ * to this page's photos in reading order (as many as both have). */
+export function pasteLayout(edits: Edits, page: Page, c: CopiedLayout): Edits {
+  const key = pageKey(page);
+  const before = edits[key];
+  const pe = clearedLayout(before);
+  // this page's photos: the cells of its mesh, else its own frames in reading order
+  const meshIds = before?.mesh?.cells?.filter(Boolean) ?? [];
+  const slots = meshIds.length ? meshIds : page.elements.filter(arranged(page)).sort(reading).map((e) => e.slot ?? e.id);
+  if (c.mesh) {
+    pe.mesh = { mesh: c.mesh, cells: c.mesh.cells.map((_, i) => slots[i] ?? "") };
+  } else {
+    c.frames.slice(0, slots.length).forEach((f, i) => (pe[slots[i]] = { ...pe[slots[i]], ...f }));
+    if (c.collage) pe.layout = { layout: "collage" };
+  }
+  const month = page.elements.find((e) => e.type === "month");
+  if (c.month && month?.slot) pe[month.slot] = { ...pe[month.slot], ...c.month };
+  return { ...edits, [key]: pe };
+}

@@ -6,7 +6,7 @@
 // committed on release.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { updateElement, type ElementEdit, type Edits } from "@/lib/edits";
-import { BG_VEIL, PAGE, photoBox, placement, type Box, type Element, type Page } from "@/lib/layout";
+import { BG_VEIL, filledSize, FONTS, fromPt, PAGE, photoBox, placement, toPt, type Box, type Element, type FontId, type Page } from "@/lib/layout";
 import { meshEdges, pointInPolygon, removeVert, splitEdge, type Mesh, type Pt } from "@/lib/mesh";
 import { textOverflows } from "@/lib/overflow";
 import { LOW_DPI, printDpi } from "@/lib/print";
@@ -42,7 +42,7 @@ export function withFrame(i: Item, change: ElementEdit | null): ElementEdit | nu
 
 export function itemsFor(pages: { page: Page | null; dx: number }[]): Item[] {
   return pages.flatMap(({ page, dx }) =>
-    (page?.elements ?? []).map((el): Item => {
+    (page?.elements ?? []).filter((el) => !(el.type === "photo" && el.twin)).map((el): Item => {
       const key = pageKey(page!);
       const slot = el.slot ?? "";
       const kind: Kind =
@@ -90,7 +90,9 @@ export function photoOf(i: Item): string | null {
   return i.el.type === "photo" ? i.el.id || null : i.el.type === "month" ? i.el.photo : null;
 }
 
-const rotOf = (i: Item) => (i.el.type === "photo" ? (i.el.rot ?? 0) : 0);
+const rotOf = (i: Item) => (i.el.type === "photo" || i.el.type === "caption" || i.el.type === "month" ? (i.el.rot ?? 0) : 0);
+/** What turns as a whole with the round handle above it (not backgrounds, mesh cells or colour areas). */
+const rotatable = (i: Item) => i.kind === "photo" || i.kind === "shape" || i.kind === "caption" || i.kind === "month";
 
 // Snapping: within 2 mm of a page's margins, centre lines and edges, or of another element's edges,
 // centre, or edge plus the 5 mm gap. Hold Alt to place freely.
@@ -127,6 +129,7 @@ type Drag =
   | { mode: "mesh"; x: number; y: number; key: string; mesh: Mesh; index: number; base: Edits; moved: boolean }
   | { mode: "pan"; x: number; y: number; target: Item; base: Edits; moved: boolean }
   | { mode: "resize"; x: number; y: number; target: Item; corner: string; base: Edits; moved: boolean }
+  | { mode: "rotate"; x: number; y: number; target: Item; base: Edits; moved: boolean }
   | { mode: "band"; x: number; y: number; moved: boolean; additive: boolean };
 
 export function EditorOverlay({
@@ -261,7 +264,8 @@ export function EditorOverlay({
       onSwapWith(target);
       return;
     }
-    if (target && tradeable(target) && !photoOf(target) && !e.shiftKey) {
+    // an empty frame (or filled text without a photo or colour) asks for a photo
+    if (target && tradeable(target) && !photoOf(target) && !(target.el.type === "month" && target.el.color) && !e.shiftKey) {
       onSelect(new Set([target.sel]));
       onEmpty(target);
       return;
@@ -275,6 +279,10 @@ export function EditorOverlay({
       lines.current = snapLines(items, selection.has(target.sel) ? selection : new Set([target.sel]), width);
       if (handle?.dataset.handle === "pan") {
         drag.current = { mode: "pan", ...p, target, base: edits, moved: false };
+        return;
+      }
+      if (handle?.dataset.handle === "rotate") {
+        drag.current = { mode: "rotate", ...p, target, base: edits, moved: false };
         return;
       }
       if (handle) {
@@ -357,7 +365,10 @@ export function EditorOverlay({
       // the focus point that puts the current view in the middle, moved against the drag
       const fx0 = (box.x + box.w / 2 - img.x) / img.w, fy0 = (box.y + box.h / 2 - img.y) / img.h;
       const hx = box.w / 2 / img.w, hy = box.h / 2 / img.h;
-      const focus: [number, number] = [clamp(fx0 - dx / img.w, hx, 1 - hx), clamp(fy0 - dy / img.h, hy, 1 - hy)];
+      // a photo turned inside its frame moves along its own axes
+      const a = ((el.irot ?? 0) * Math.PI) / 180;
+      const ix = dx * Math.cos(a) + dy * Math.sin(a), iy = -dx * Math.sin(a) + dy * Math.cos(a);
+      const focus: [number, number] = [clamp(fx0 - ix / img.w, hx, 1 - hx), clamp(fy0 - iy / img.h, hy, 1 - hy)];
       next = updateElement(d.base, d.target.key, d.target.slot, { focus });
     } else if (d.mode === "resize") {
       const { box, dx: off } = d.target;
@@ -376,6 +387,15 @@ export function EditorOverlay({
       if (c.includes("w")) x = box.x + box.w - w;
       if (c.includes("n")) y = box.y + box.h - h;
       next = updateElement(d.base, d.target.key, d.target.slot, withFrame(d.target, { x, y, w, h }));
+    } else if (d.mode === "rotate") {
+      // the handle hangs below the middle (the toolbar floats above): its angle around the centre,
+      // snapping to square
+      const t = d.target, cx = t.dx + t.box.x + t.box.w / 2, cy = t.box.y + t.box.h / 2;
+      let deg = (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI - 90;
+      deg = ((deg + 540) % 360) - 180;
+      const square = Math.round(deg / 90) * 90;
+      if (snapping && Math.abs(deg - square) < 4) deg = square;
+      next = updateElement(d.base, t.key, t.slot, withFrame(t, { rot: Math.round(deg * 10) / 10 }));
     } else {
       setBand({ x0: d.x, y0: d.y, x1: p.x, y1: p.y });
     }
@@ -644,6 +664,13 @@ export function EditorOverlay({
                   }}
                 />
               ))}
+            {!locked && rotatable(i) && (
+              <>
+                <span className="pointer-events-none absolute -bottom-5 left-1/2 h-5 w-px bg-accent" />
+                <span data-handle="rotate" title="Sleep om te draaien (snapt recht; Alt = vrij)"
+                  className="pointer-events-auto absolute -bottom-8 left-1/2 h-4 w-4 -translate-x-1/2 cursor-grab rounded-full border-2 border-white bg-accent shadow active:cursor-grabbing" />
+              </>
+            )}
             {photoOf(i) && (
               <span
                 data-handle="pan"
@@ -726,6 +753,18 @@ const ICONS: Record<string, ReactNode> = {
   aligncenter: <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />,
   alignright: <path d="M4 6h16M10 10h10M4 14h16M10 18h10" />,
   color: <><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" /></>,
+  alignL: <path d="M4 3v18M8 7h12M8 12h7M8 17h10" />,
+  alignCX: <path d="M12 3v18M6 7h12M8 12h8M5 17h14" />,
+  alignR: <path d="M20 3v18M4 7h12M9 12h7M6 17h10" />,
+  alignT: <path d="M3 4h18M7 8v12M12 8v7M17 8v10" />,
+  alignCY: <path d="M3 12h18M7 6v12M12 8v8M17 5v14" />,
+  alignB: <path d="M3 20h18M7 4v12M12 9v7M17 6v10" />,
+  distH: <path d="M4 4v16M20 4v16M10 8h4v8h-4z" />,
+  distV: <path d="M4 4h16M4 20h16M8 10v4h8v-4z" />,
+  align: <path d="M4 3v18M8 6h12v4H8zM8 14h7v4H8z" />,
+  turnPhoto: <><rect x="4" y="7" width="16" height="12" rx="1.5" /><path d="M8 3.5a9 9 0 0 1 10 1.5M18 2v3h-3M8 15l3-3 2 2 2-2 3 3" /></>,
+  font: <path d="M3 18 8 5h1.2l5 13M4.8 14h7.6M16 11.5c.6-1 1.6-1.5 2.7-1.5 1.6 0 2.3 1 2.3 2.5V18m0-3.5c-3.5 0-5 .8-5 2.1 0 1 .8 1.6 1.9 1.6 1.6 0 3.1-1.2 3.1-3.7" />,
+  addWord: <><path d="M3 20 8 4h2l5 16M5 14h8" /><rect x="15.5" y="11" width="6" height="9" rx="1" /><path d="m15.5 18 2-2 1.5 1.5 1-1 1.5 1.5" /></>,
   resetPage: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M9 14a3 3 0 1 0 1-2.2L9 13M9 10v3h3" /></>,
 };
 
@@ -837,8 +876,9 @@ export interface BarActions {
 
 const SWATCHES = ["#ffffff", "#161513", "#f6f4ef", "#e9e2d0", "#f2c94c", "#f4a6a6", "#a8d5ba", "#9cc3e6", "#c3aed6", "#e07a5f"];
 
-/** Swatches, the page's own tones, any colour, and (for text) "automatisch contrast". */
-export function ColorChoice({ value, onChange, tones, auto }: { value: string; onChange: (c: string) => void; tones: string[]; auto?: boolean }) {
+/** Swatches, the page's own tones, any colour, (for text) "automatisch contrast" and (for filled
+ * text) the photo itself ("" as the value). */
+export function ColorChoice({ value, onChange, tones, auto, photo }: { value: string; onChange: (c: string) => void; tones: string[]; auto?: boolean; photo?: boolean }) {
   const sw = (c: string) => (
     <button key={c} type="button" aria-label={c} title={c} onClick={() => onChange(c)}
       className={`h-7 w-7 rounded-full border shadow-sm ${value.toLowerCase() === c.toLowerCase() ? "ring-2 ring-accent ring-offset-1" : "border-hair"}`}
@@ -846,6 +886,13 @@ export function ColorChoice({ value, onChange, tones, auto }: { value: string; o
   );
   return (
     <div className="space-y-2">
+      {photo && (
+        <button type="button" onClick={() => onChange("")}
+          className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-sm ${value === "" ? "border-accent bg-accent/10" : "border-hair hover:bg-page"}`}>
+          <span className="h-5 w-5 rounded-full border border-hair" style={{ background: PHOTO_SWATCH }} />
+          Gevuld met de foto
+        </button>
+      )}
       {auto && (
         <button type="button" onClick={() => onChange("auto")}
           className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-sm ${value === "auto" ? "border-accent bg-accent/10" : "border-hair hover:bg-page"}`}>
@@ -869,6 +916,70 @@ export function ColorChoice({ value, onChange, tones, auto }: { value: string; o
   );
 }
 
+const PHOTO_SWATCH = "linear-gradient(135deg,#9cc3e6 0 45%,#f2c94c 45% 70%,#a8d5ba 70%)";
+
+/** The fonts, each shown in itself. */
+function FontList({ value, onPick }: { value: FontId; onPick: (f: FontId) => void }) {
+  return (
+    <div className="space-y-0.5">
+      {(Object.keys(FONTS) as FontId[]).map((f) => (
+        <button key={f} type="button" onClick={() => onPick(f)}
+          className={`flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-page ${value === f ? "bg-accent/10" : ""}`}>
+          <span className="text-lg leading-tight" style={{ fontFamily: FONTS[f].family, fontWeight: FONTS[f].weight }}>{FONTS[f].label}</span>
+          {value === f && <span className="text-xs text-accent">✓</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The text size in points: type it, or step it with − and +. */
+function SizeField({ mm, onCommit }: { mm: number; onCommit: (mm: number) => void }) {
+  const pt = Math.round(toPt(mm) * 10) / 10;
+  const [draft, setDraft] = useState(String(pt).replace(".", ","));
+  const commit = () => {
+    const v = Number.parseFloat(draft.replace(",", "."));
+    if (Number.isFinite(v) && v >= 4 && v <= 200 && Math.abs(v - pt) > 0.04) onCommit(fromPt(v));
+    else setDraft(String(pt).replace(".", ","));
+  };
+  const step = (f: number) => onCommit(fromPt(Math.min(200, Math.max(4, Math.round(pt * f * 2) / 2))));
+  return (
+    <span className="flex items-center" title="Lettergrootte in punt">
+      <IconBtn icon="smaller" label="Kleinere tekst" onClick={() => step(1 / 1.15)} />
+      <input value={draft} inputMode="decimal" aria-label="Lettergrootte (pt)"
+        onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()}
+        className="h-8 w-11 rounded-md border border-hair bg-page px-1 text-center text-sm tabular-nums" />
+      <span className="pl-0.5 text-xs text-muted">pt</span>
+      <IconBtn icon="bigger" label="Grotere tekst" onClick={() => step(1.15)} />
+    </span>
+  );
+}
+
+/** A photo turned inside its frame: quarter turns, and a fine tilt of up to 45° either way. */
+function TurnMenu({ value, onCommit }: { value: number; onCommit: (deg: number) => void }) {
+  const quarter = Math.round(value / 90);
+  const [tilt, setTilt] = useState(Math.round((value - quarter * 90) * 10) / 10);
+  const norm = (d: number) => ((((d + 180) % 360) + 360) % 360) - 180;
+  const btn = "rounded-lg border border-hair px-2 py-1 text-sm hover:bg-page";
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-semibold text-ink-2">Foto draaien in het kader</div>
+      <label className="flex items-center gap-2 text-xs text-ink-2">
+        <input type="range" min={-45} max={45} step={0.5} value={tilt} className="flex-1"
+          onChange={(e) => setTilt(Number(e.target.value))}
+          onPointerUp={() => onCommit(norm(quarter * 90 + tilt))}
+          onKeyUp={() => onCommit(norm(quarter * 90 + tilt))} />
+        <span className="w-10 text-right tabular-nums">{tilt}°</span>
+      </label>
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className={btn} onClick={() => onCommit(norm((quarter - 1) * 90 + tilt))}>↺ 90°</button>
+        <button type="button" className={btn} onClick={() => onCommit(norm((quarter + 1) * 90 + tilt))}>↻ 90°</button>
+        <button type="button" className={btn} onClick={() => { setTilt(0); onCommit(0); }}>Recht</button>
+      </div>
+    </div>
+  );
+}
+
 /** The white veil over a background photo: drag, committed on release (one undo step). */
 function VeilSlider({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
   const [draft, setDraft] = useState(value);
@@ -886,12 +997,37 @@ function VeilSlider({ value, onCommit }: { value: number; onCommit: (v: number) 
 
 /** Floats next to the selection; what it offers depends on what is selected. */
 export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; a: BarActions; dock?: boolean }) {
-  const [menu, setMenu] = useState<"border" | "color" | null>(null);
+  const [menu, setMenu] = useState<"border" | "color" | "font" | "turn" | "align" | null>(null);
   const one = selected.length === 1 ? selected[0] : null;
   const kinds = new Set(selected.map((i) => i.kind));
   const every = (...ks: Kind[]) => [...kinds].every((k) => ks.includes(k));
   const zoom = (d: number) => a.apply((i) => (i.el.type === "photo" || i.el.type === "month" ? { zoom: clamp((i.el.zoom ?? 1) + d, 1, 4) } : {}));
-  const rot = (d: number) => a.apply((i) => (i.el.type === "photo" ? { rot: Math.round(((i.el.rot ?? 0) + d) * 10) / 10 } : {}));
+  const rot = (d: number) => a.apply((i) => (rotatable(i) && (i.el.type === "photo" || i.el.type === "caption" || i.el.type === "month") ? { rot: Math.round(((i.el.rot ?? 0) + d) * 10) / 10 } : {}));
+  // line the selection up on its outer edges or centres, or space it evenly (boxes on the spread)
+  const left = (i: Item) => i.dx + i.box.x;
+  const align = (how: "l" | "cx" | "r" | "t" | "cy" | "b") => {
+    const L = Math.min(...selected.map(left)), R = Math.max(...selected.map((i) => left(i) + i.box.w));
+    const T = Math.min(...selected.map((i) => i.box.y)), Bt = Math.max(...selected.map((i) => i.box.y + i.box.h));
+    a.apply((i) => {
+      const x = left(i), y = i.box.y, w = i.box.w, h = i.box.h;
+      const ddx = how === "l" ? L - x : how === "r" ? R - x - w : how === "cx" ? (L + R) / 2 - x - w / 2 : 0;
+      const ddy = how === "t" ? T - y : how === "b" ? Bt - y - h : how === "cy" ? (T + Bt) / 2 - y - h / 2 : 0;
+      return moveBy(i, ddx, ddy) ?? {};
+    });
+  };
+  const distribute = (axis: "x" | "y") => {
+    const start = (i: Item) => (axis === "x" ? left(i) : i.box.y), size = (i: Item) => (axis === "x" ? i.box.w : i.box.h);
+    const order = [...selected].sort((p, q) => start(p) - start(q));
+    const from = start(order[0]), to = Math.max(...order.map((i) => start(i) + size(i)));
+    const gap = (to - from - order.reduce((n, i) => n + size(i), 0)) / (order.length - 1);
+    const shift = new Map<string, number>();
+    let at = from;
+    for (const i of order) {
+      shift.set(i.sel, at - start(i));
+      at += size(i) + gap;
+    }
+    a.apply((i) => moveBy(i, axis === "x" ? (shift.get(i.sel) ?? 0) : 0, axis === "y" ? (shift.get(i.sel) ?? 0) : 0) ?? {});
+  };
   const B = PAGE.bleed;
   const isFull = (i: Item) => i.box.x <= -B + 0.1 && i.box.y <= -B + 0.1 && i.box.w >= PAGE.w + 2 * B - 0.1 && i.box.h >= PAGE.h + 2 * B - 0.1;
   const caption = one?.el.type === "caption" ? one.el : null;
@@ -901,7 +1037,12 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
   // a photo frame given its own outline (not the cover's shards) keeps its border options
   const reshaped = (i: Item) => i.kind === "shape" && !i.page.cover && i.el.type === "photo" && i.el.shape?.kind === "poly";
   const bordered = framed || selected.every(reshaped);
-  const colour = caption ? (caption.color ?? "#fff") : fillEl?.color;
+  const colour = caption ? (caption.color ?? "#fff") : month ? (month.color ?? "") : fillEl?.color;
+  const font: FontId | null = caption ? (caption.font ?? "sans") : month ? (month.font ?? "heavy") : null;
+  const turnable = one && photoOf(one) && (one.el.type === "photo" || one.el.type === "month") ? one.el : null;
+  const popover = dock
+    ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8.5rem)] z-40 rounded-2xl border border-hair bg-surface p-3 shadow-xl"
+    : "absolute top-full left-0 z-20 mt-1.5 w-64 rounded-xl border border-hair bg-surface p-3 shadow-lg";
   const pictured = every("photo", "shape", "bg", "month", "cell");
   return (
     <div className={dock ? "flex items-center gap-0.5" : "relative flex flex-nowrap items-center justify-center gap-0.5 rounded-xl border border-hair bg-surface p-1 text-ink shadow-lg"}>
@@ -910,26 +1051,33 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
       {caption && (
         <>
           <TextArea key={one!.sel + caption.text} value={caption.text} onCommit={(text) => a.apply(() => ({ text }))} />
-          <IconBtn icon="smaller" label="Kleinere tekst" onClick={() => a.apply(() => ({ size: Math.max(2, (caption.size ?? 3.53) / 1.15) }))} />
-          <IconBtn icon="bigger" label="Grotere tekst" onClick={() => a.apply(() => ({ size: Math.min(40, (caption.size ?? 3.53) * 1.15) }))} />
+          <SizeField key={`${one!.sel}${caption.size ?? 3.53}`} mm={caption.size ?? 3.53} onCommit={(size) => a.apply(() => ({ size }))} />
           <IconBtn icon={`align${caption.align ?? "left"}`} label={{ left: "Links uitgelijnd", center: "Gecentreerd", right: "Rechts uitgelijnd" }[caption.align ?? "left"]}
             onClick={() => a.apply(() => ({ align: ({ left: "center", center: "right", right: "left" } as const)[caption.align ?? "left"] }))} />
         </>
       )}
-      {colour !== undefined && (
-        <button type="button" aria-label={caption ? "Tekstkleur" : "Kleur"} title={caption ? "Tekstkleur" : "Kleur"} onClick={() => setMenu(menu === "color" ? null : "color")}
-          className={`flex h-9 w-9 items-center justify-center rounded-lg ${menu === "color" ? "bg-page" : "hover:bg-page"}`}>
-          <span className="h-5 w-5 rounded-full border border-hair shadow-sm"
-            style={{ background: colour === "auto" ? "linear-gradient(90deg,#fff 50%,#161513 50%)" : colour }} />
-        </button>
-      )}
-      {(caption || fillEl) && <Sep />}
       {month && (
         <>
-          <TextField key={one!.sel + month.name} value={month.name} label="Maand" onCommit={(text) => a.apply(() => ({ text }))} />
-          <Sep />
+          <TextField key={one!.sel + month.name} value={month.name} label={one!.slot === "month" ? "Maand" : "Tekst"} onCommit={(text) => a.apply(() => ({ text }))} />
+          <span className="px-1.5 text-xs whitespace-nowrap text-muted tabular-nums" title="Lettergrootte: volgt het kader (sleep de hoeken)">{Math.round(toPt(filledSize(month)))} pt</span>
         </>
       )}
+      {font && (
+        <button type="button" aria-label="Lettertype" title={`Lettertype: ${FONTS[font].label}`} onClick={() => setMenu(menu === "font" ? null : "font")}
+          className={`flex h-9 items-center rounded-lg px-2 text-base ${menu === "font" ? "bg-page" : "hover:bg-page"}`}
+          style={{ fontFamily: FONTS[font].family, fontWeight: FONTS[font].weight }}>
+          Aa
+        </button>
+      )}
+      {colour !== undefined && (
+        <button type="button" aria-label={caption || month ? "Tekstkleur" : "Kleur"} title={caption || month ? "Tekstkleur" : "Kleur"} onClick={() => setMenu(menu === "color" ? null : "color")}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg ${menu === "color" ? "bg-page" : "hover:bg-page"}`}>
+          <span className="h-5 w-5 rounded-full border border-hair shadow-sm"
+            style={{ background: colour === "auto" ? "linear-gradient(90deg,#fff 50%,#161513 50%)" : colour === "" ? PHOTO_SWATCH : colour }} />
+        </button>
+      )}
+      {(caption || fillEl || month) && <Sep />}
+      {selected.length > 1 && <IconBtn icon="align" label="Uitlijnen en verdelen" active={menu === "align"} onClick={() => setMenu(menu === "align" ? null : "align")} />}
       {one?.kind === "bg" && one.el.type === "photo" && (
         <>
           <VeilSlider key={one.sel} value={one.el.veil ?? BG_VEIL} onCommit={(veil) => a.apply(() => ({ veil }))} />
@@ -943,9 +1091,10 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
           <IconBtn icon="zoomIn" label="Inzoomen" onClick={() => zoom(0.15)} />
         </>
       )}
-      {(kinds.has("photo") || kinds.has("shape")) && !kinds.has("cell") && (
+      {turnable && <IconBtn icon="turnPhoto" label="Foto draaien in het kader" active={menu === "turn"} onClick={() => setMenu(menu === "turn" ? null : "turn")} />}
+      {selected.some(rotatable) && !kinds.has("cell") && !kinds.has("bg") && (
         <>
-          <IconBtn icon="rotL" label="Draai linksom" onClick={() => rot(-3)} />
+          <IconBtn icon="rotL" label="Draai linksom (of sleep het rondje boven de selectie)" onClick={() => rot(-3)} />
           <IconBtn icon="rotR" label="Draai rechtsom" onClick={() => rot(3)} />
         </>
       )}
@@ -986,8 +1135,44 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
         </div>
       )}
       {menu === "color" && colour !== undefined && (
-        <div className={dock ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+8.5rem)] z-40 rounded-2xl border border-hair bg-surface p-3 shadow-xl" : "absolute top-full left-0 z-20 mt-1.5 w-64 rounded-xl border border-hair bg-surface p-3 shadow-lg"}>
-          <ColorChoice value={colour} tones={a.tones} auto={!!caption} onChange={(color) => a.apply(() => ({ color }))} />
+        <div className={popover}>
+          <ColorChoice value={colour} tones={a.tones} auto={!!caption} photo={!!month} onChange={(color) => a.apply(() => ({ color }))} />
+        </div>
+      )}
+      {menu === "font" && font && (
+        <div className={popover}>
+          <FontList value={font} onPick={(f) => {
+            // the default of each (Open Sans with its halo; League Spartan for filled text) is no setting at all
+            a.apply(() => ({ font: (caption && f === "sans") || (month && f === "heavy") ? undefined : f }));
+            setMenu(null);
+          }} />
+        </div>
+      )}
+      {menu === "turn" && turnable && (
+        <div className={popover}>
+          <TurnMenu key={one!.sel} value={turnable.irot ?? 0} onCommit={(irot) => a.apply(() => ({ irot: irot || undefined }))} />
+        </div>
+      )}
+      {menu === "align" && selected.length > 1 && (
+        <div className={dock ? popover : "absolute top-full left-0 z-20 mt-1.5 rounded-xl border border-hair bg-surface p-2 shadow-lg"}>
+          <div className="mb-1 px-1 text-[11px] text-muted">Uitlijnen</div>
+          <div className="flex gap-0.5">
+            <IconBtn icon="alignL" label="Links uitlijnen" onClick={() => align("l")} />
+            <IconBtn icon="alignCX" label="Horizontaal centreren" onClick={() => align("cx")} />
+            <IconBtn icon="alignR" label="Rechts uitlijnen" onClick={() => align("r")} />
+            <IconBtn icon="alignT" label="Boven uitlijnen" onClick={() => align("t")} />
+            <IconBtn icon="alignCY" label="Verticaal centreren" onClick={() => align("cy")} />
+            <IconBtn icon="alignB" label="Onder uitlijnen" onClick={() => align("b")} />
+          </div>
+          {selected.length > 2 && (
+            <>
+              <div className="mt-1.5 mb-1 px-1 text-[11px] text-muted">Gelijk verdelen</div>
+              <div className="flex gap-0.5">
+                <IconBtn icon="distH" label="Gelijke ruimte naast elkaar" onClick={() => distribute("x")} />
+                <IconBtn icon="distV" label="Gelijke ruimte onder elkaar" onClick={() => distribute("y")} />
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1004,6 +1189,7 @@ export function EditBar({
   onSnap,
   onAddText,
   onAddFrame,
+  onAddWord,
   onPage,
   saving,
   onResetPages,
@@ -1018,6 +1204,7 @@ export function EditBar({
   onSnap: (on: boolean) => void;
   onAddText: () => void;
   onAddFrame: () => void;
+  onAddWord: () => void;
   onPage: () => void;
   saving: SaveStatus;
   onResetPages: () => void;
@@ -1034,6 +1221,7 @@ export function EditBar({
       <IconBtn icon="page" label="Pagina bewerken (achtergrond, vorm, indeling)" onClick={onPage} />
       <IconBtn icon="addText" label="Tekst toevoegen" onClick={onAddText} />
       <IconBtn icon="addFrame" label="Fotokader toevoegen" onClick={onAddFrame} />
+      <IconBtn icon="addWord" label="Gevulde tekst toevoegen (letters met een foto, zoals de maanden)" onClick={onAddWord} />
       <IconBtn icon="resetPage" label="Alle wijzigingen op deze pagina's terugdraaien" onClick={onResetPages} />
       <span className="relative">
         <IconBtn icon="note" label="Notities" onClick={onNotes} />

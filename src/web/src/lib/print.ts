@@ -38,7 +38,8 @@ export function printIssues(pages: Page[], photos: Photos, placed: Map<string, n
   for (const page of pages) {
     for (const el of page.elements) {
       const id = photoIdOf(el);
-      if (id === null) continue;
+      // a photo across the spine is checked on its own page, not again as the facing half
+      if (id === null || (el.type === "photo" && el.twin)) continue;
       const slot = el.slot;
       if (!id) {
         if (el.type === "photo" && el.bg) continue;
