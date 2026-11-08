@@ -752,6 +752,9 @@ const ICONS: Record<string, ReactNode> = {
   alignleft: <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />,
   aligncenter: <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />,
   alignright: <path d="M4 6h16M10 10h10M4 14h16M10 18h10" />,
+  valigntop: <><path d="M4 3h16" /><rect x="7" y="6" width="10" height="7" rx="1" /><path d="M4 21h16" strokeOpacity=".35" /></>,
+  valignmiddle: <><path d="M4 3h16M4 21h16" strokeOpacity=".35" /><rect x="7" y="8.5" width="10" height="7" rx="1" /></>,
+  valignbottom: <><path d="M4 3h16" strokeOpacity=".35" /><rect x="7" y="11" width="10" height="7" rx="1" /><path d="M4 21h16" /></>,
   color: <><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" /></>,
   alignL: <path d="M4 3v18M8 7h12M8 12h7M8 17h10" />,
   alignCX: <path d="M12 3v18M6 7h12M8 12h8M5 17h14" />,
@@ -1054,6 +1057,8 @@ export function SelectionBar({ selected, a, dock = false }: { selected: Item[]; 
           <SizeField key={`${one!.sel}${caption.size ?? 3.53}`} mm={caption.size ?? 3.53} onCommit={(size) => a.apply(() => ({ size }))} />
           <IconBtn icon={`align${caption.align ?? "left"}`} label={{ left: "Links uitgelijnd", center: "Gecentreerd", right: "Rechts uitgelijnd" }[caption.align ?? "left"]}
             onClick={() => a.apply(() => ({ align: ({ left: "center", center: "right", right: "left" } as const)[caption.align ?? "left"] }))} />
+          <IconBtn icon={`valign${caption.valign ?? "top"}`} label={{ top: "Bovenaan in het kader", middle: "Midden in het kader", bottom: "Onderaan in het kader" }[caption.valign ?? "top"]}
+            onClick={() => a.apply(() => ({ valign: ({ top: "middle", middle: "bottom", bottom: "top" } as const)[caption.valign ?? "top"] }))} />
         </>
       )}
       {month && (

@@ -156,13 +156,17 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   that differ from the last known server copy are sent (PATCH), and the server's merged map comes
   back into the cache, so two tabs only overwrite each other on the same page.
 - Text frames: a caption is a box (x/y/w/h); its text wraps within the width and is cut off at
-  the bottom (rendered as a foreignObject). Corner handles resize the frame, not the text; A−/A+
-  change the size. The editor measures every frame on the rendered page and marks one whose text
-  doesn't fit with a red dashed outline and "!" (as Albelli does): lines × line height and the
-  lines' right edges in screen pixels (`textOverflows`), not the element's scroll sizes, which are
-  whole page units and count HAPPY DONUTS' tall ascent/descent; a space hanging past the edge
-  where a line wraps doesn't count. Caption edits from before text
-  frames (no `box`) are converted on load and on their first change.
+  the bottom (rendered as a foreignObject). Corner handles resize the frame, not the text; the size
+  is typed or stepped. Horizontal alignment (left / centre / right) and vertical alignment (`valign`:
+  top, middle, bottom; middle and bottom make the text the one item of a flex column) cycle with
+  their buttons. The editor measures every frame on the rendered page and marks one whose text
+  doesn't fit with a red dashed outline and "!" (as Albelli does). It measures the letters, one by
+  one, in screen pixels (`textOverflows`): the lines they sit on × the line height against the
+  frame's height, and any letter past a side. Not the element's scroll sizes (whole page units,
+  and they count HAPPY DONUTS' tall ascent/descent) and not the line boxes, whose spaces at a wrap
+  or at the end of a right-aligned line browsers place differently (that made right-aligned text
+  look too wide). Caption edits from before text frames (no `box`) are converted on load and on
+  their first change.
 - "Bekijken" shows the book as large as the window allows (no filmstrip) with a full-screen
   button: the Fullscreen API, or the whole window where there is none (iPhone Safari).
 - Text colour: swatches, the page's photo tones, any colour, or "auto": `lib/contrast.ts` traces

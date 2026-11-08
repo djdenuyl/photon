@@ -31,6 +31,7 @@ export interface ElementEdit {
   size?: number;
   color?: string;
   align?: "left" | "center" | "right";
+  valign?: "top" | "middle" | "bottom";
   font?: FontId;
   /** An element added in the editor (not from the layout). "word": text filled with a photo, like
    * the month titles; "twin": the facing page's half of a photo across the spine (`of`). */
@@ -193,6 +194,7 @@ function captionWith(o: CaptionElement, ed: ElementEdit | undefined): CaptionEle
   if (ed.size !== undefined) o.size = ed.size;
   if (ed.color !== undefined) o.color = ed.color;
   if (ed.align !== undefined) o.align = ed.align;
+  if (ed.valign !== undefined) o.valign = ed.valign;
   if (ed.rot !== undefined) o.rot = ed.rot;
   if ("font" in ed) o.font = ed.font;
   if (ed.box) {

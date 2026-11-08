@@ -74,6 +74,8 @@ export interface CaptionElement extends Box, Editable {
   /** Unset: Open Sans with a soft halo (the captions of the earlier books). */
   font?: FontId;
   align?: "left" | "center" | "right";
+  /** Where the text sits in its frame; unset is the top. */
+  valign?: "top" | "middle" | "bottom";
   rot?: number;
   /** With color "auto": the colour picked for what lies under the text (set by the editor). */
   autoColor?: string;
@@ -690,7 +692,10 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
       const size = e.size ?? CAPTION_SIZE, color = e.color === "auto" ? (e.autoColor ?? "#fff") : (e.color ?? "#fff");
       const f = FONTS[e.font ?? "sans"];
       const halo = e.font ? "" : `text-shadow:0 0 ${size * 0.25}px ${color === "#fff" ? "rgba(0,0,0,.45)" : "rgba(255,255,255,.45)"};`;
-      const style = `margin:0;width:100%;height:100%;overflow:hidden;font-family:${f.family};font-weight:${f.weight};font-size:${size}px;line-height:${LINE};color:${color};text-align:${e.align ?? "left"};white-space:pre-wrap;overflow-wrap:break-word;${halo}`;
+      // middle and bottom: the text as the one item of a column, pushed down within the frame
+      const v = e.valign === "middle" ? "center" : e.valign === "bottom" ? "flex-end" : null;
+      const column = v ? `display:flex;flex-direction:column;justify-content:${v};` : "";
+      const style = `margin:0;width:100%;height:100%;overflow:hidden;${column}font-family:${f.family};font-weight:${f.weight};font-size:${size}px;line-height:${LINE};color:${color};text-align:${e.align ?? "left"};white-space:pre-wrap;overflow-wrap:break-word;${halo}`;
       const inner = `<foreignObject x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}"><div xmlns="http://www.w3.org/1999/xhtml" data-cap="${p.event.id}:${p.k}|${e.slot ?? ""}" style="${style.replace(/"/g, "&quot;")}">${esc(e.text)}</div></foreignObject>`;
       // data-rot: the text-fit check measures with the rotation taken off (lib/overflow.ts)
       parts.push(e.rot ? `<g data-rot="" transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);

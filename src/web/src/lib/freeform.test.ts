@@ -134,6 +134,19 @@ describe("text and filled text", () => {
   });
 });
 
+describe("vertical alignment in a text frame", () => {
+  it("middle and bottom set the text as a column pushed down; top is as before", () => {
+    const books = fresh();
+    const page = books[0].pages[0];
+    const svg = (valign?: "top" | "middle" | "bottom") =>
+      pageBody(applyEdits(fresh(), updateElement({}, pageKey(page), "cap1", { add: "caption", text: "Hoi", valign, box: true, x: 10, y: 10, w: 40, h: 30 }))[0].pages[0], photos, () => "");
+    expect(svg("middle")).toContain("justify-content:center");
+    expect(svg("bottom")).toContain("justify-content:flex-end");
+    expect(svg("top")).not.toContain("justify-content");
+    expect(svg()).not.toContain("justify-content");
+  });
+});
+
 describe("a photo turned in its frame", () => {
   it("covers the frame's turned box, around the same centre", () => {
     const el: Element = { type: "photo", id: "p001", x: 10, y: 10, w: 100, h: 50, irot: 90 };
