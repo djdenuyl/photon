@@ -4,10 +4,12 @@
 // see-through centre handle, drag the points and sides of colour areas, drag the points of a mesh
 // layout, and a toolbar that floats next to the selection. Changes are previewed live and
 // committed on release.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { updateElement, type ElementEdit, type Edits } from "@/lib/edits";
-import { BG_VEIL, PAGE, placement, type Box, type Element, type Page } from "@/lib/layout";
+import { BG_VEIL, PAGE, photoBox, placement, type Box, type Element, type Page } from "@/lib/layout";
 import { meshEdges, pointInPolygon, removeVert, splitEdge, type Mesh, type Pt } from "@/lib/mesh";
+import { textOverflows } from "@/lib/overflow";
+import { LOW_DPI, printDpi } from "@/lib/print";
 import type { SaveStatus } from "@/lib/saver";
 import type { Photos } from "@/lib/types";
 
@@ -89,29 +91,6 @@ export function photoOf(i: Item): string | null {
 }
 
 const rotOf = (i: Item) => (i.el.type === "photo" ? (i.el.rot ?? 0) : 0);
-
-/**
- * Does a text frame's text not fit? Counted in lines × line height, in screen pixels: the
- * element's own scroll sizes are whole numbers of page units (a millimetre each, far too coarse)
- * and include the font's ascent and descent, which for HAPPY DONUTS are much taller than its
- * letters (so "DEEL 2" looked too big for a frame it fits in).
- */
-function textOverflows(el: HTMLElement): boolean {
-  const box = el.getBoundingClientRect();
-  const style = getComputedStyle(el);
-  const scale = box.width / (parseFloat(style.width) || 1);
-  const line = parseFloat(style.lineHeight) * scale;
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  const rects = [...range.getClientRects()].filter((r) => r.width > 0);
-  if (!rects.length || !line) return false;
-  const tops: number[] = [];
-  for (const r of rects) if (!tops.some((t) => Math.abs(t - r.top) < line / 2)) tops.push(r.top);
-  const tooTall = tops.length * line > box.height + 0.5;
-  // a space where a line wraps hangs past the edge: only real text (wider than half a line) counts
-  const tooWide = rects.some((r) => r.width > line / 2 && r.right > box.right + 1);
-  return tooTall || tooWide;
-}
 
 // Snapping: within 2 mm of a page's margins, centre lines and edges, or of another element's edges,
 // centre, or edge plus the 5 mm gap. Hold Alt to place freely.
@@ -214,6 +193,17 @@ export function EditorOverlay({
       .map((i) => i.sel);
     if (over.join() !== overflow.join()) setOverflow(over);
   }, [items, overflow]);
+  // photos with too few pixels for the size they print at (live while resizing or zooming)
+  const lowRes = useMemo(() => {
+    const low = new Map<string, number>();
+    for (const i of items) {
+      const id = photoOf(i);
+      const photo = id ? photos.get(id) : undefined;
+      const dpi = photo ? printDpi(photo, i.el) : null;
+      if (dpi !== null && dpi < LOW_DPI) low.set(i.sel, Math.round(dpi));
+    }
+    return low;
+  }, [items, photos]);
 
   // a point of a colour area, picked to delete it (Delete / Backspace)
   const [vertex, setVertex] = useState<{ sel: string; index: number } | null>(null);
@@ -362,10 +352,11 @@ export function EditorOverlay({
       const id = photoOf(d.target);
       const photo = id ? photos.get(id) : undefined;
       if (!photo || (el.type !== "photo" && el.type !== "month")) return;
-      const img = placement(photo, el, el.zoom ?? 1, el.focus);
+      const box = photoBox(el);
+      const img = placement(photo, box, el.zoom ?? 1, el.focus);
       // the focus point that puts the current view in the middle, moved against the drag
-      const fx0 = (el.x + el.w / 2 - img.x) / img.w, fy0 = (el.y + el.h / 2 - img.y) / img.h;
-      const hx = el.w / 2 / img.w, hy = el.h / 2 / img.h;
+      const fx0 = (box.x + box.w / 2 - img.x) / img.w, fy0 = (box.y + box.h / 2 - img.y) / img.h;
+      const hx = box.w / 2 / img.w, hy = box.h / 2 / img.h;
       const focus: [number, number] = [clamp(fx0 - dx / img.w, hx, 1 - hx), clamp(fy0 - dy / img.h, hy, 1 - hy)];
       next = updateElement(d.base, d.target.key, d.target.slot, { focus });
     } else if (d.mode === "resize") {
@@ -500,13 +491,15 @@ export function EditorOverlay({
         // backgrounds, the page, cells and colour areas take no pointer events (picked by outline or click)
         const bg = i.kind === "bg" || i.kind === "page" || byOutline(i);
         const tooMuch = overflow.includes(i.sel);
-        if ((i.kind === "bg" || i.kind === "page" || i.kind === "fill") && !on) return null;
+        const dpi = lowRes.get(i.sel);
+        // a background photo isn't drawn as a frame, but too few pixels still gets its badge
+        if ((i.kind === "bg" || i.kind === "page" || i.kind === "fill") && !on && !(i.kind === "bg" && dpi !== undefined)) return null;
         const rot = rotOf(i);
         return (
           <div
             key={i.sel}
             data-sel={i.sel}
-            className={`absolute ${bg ? "pointer-events-none" : "cursor-move"} ${polygonOf(i) ? "" : tooMuch ? "outline-2 outline-dashed outline-[#e5322d]" : on ? "outline-2 outline-accent" : `outline-1 hover:outline-white/80 ${i.kind === "caption" ? "outline-dashed outline-white/40" : "outline-white/0"}`}`}
+            className={`absolute ${bg ? "pointer-events-none" : "cursor-move"} ${polygonOf(i) ? "" : tooMuch || (dpi !== undefined && !on && i.kind !== "bg") ? "outline-2 outline-dashed outline-[#e5322d]" : on ? "outline-2 outline-accent" : `outline-1 hover:outline-white/80 ${i.kind === "caption" ? "outline-dashed outline-white/40" : "outline-white/0"}`}`}
             style={{
               left: pct(i.dx + i.box.x, width),
               top: pct(i.box.y, PAGE.h),
@@ -522,6 +515,14 @@ export function EditorOverlay({
                 className="absolute -top-2.5 -right-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#e5322d] text-xs font-bold text-white shadow"
               >
                 !
+              </span>
+            )}
+            {dpi !== undefined && (
+              <span
+                title={`Te klein om scherp te drukken: ${dpi} dpi (minstens ${LOW_DPI}). Maak het kader kleiner of kies een grotere foto.`}
+                className={`pointer-events-auto absolute flex h-5 items-center justify-center rounded-full bg-[#e5322d] px-1.5 text-[10px] font-bold text-white shadow ${i.kind === "bg" ? "top-3 left-3" : "-top-2.5 -left-2.5"}`}
+              >
+                {dpi} dpi
               </span>
             )}
           </div>
@@ -742,7 +743,7 @@ export function IconBtn({ icon, label, onClick, active, disabled, danger }: { ic
     <button type="button" aria-label={label} aria-pressed={active} onClick={onClick} disabled={disabled}
       className={`group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg disabled:opacity-35 ${active ? "bg-ink text-page" : danger ? "text-[#d92d20] hover:bg-[#d92d20]/10" : "hover:bg-page"}`}>
       <Icon name={icon} />
-      <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-1.5 -translate-x-1/2 rounded-md bg-ink px-2 py-1 text-[11px] font-medium whitespace-nowrap text-page opacity-0 shadow transition-opacity delay-200 group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:hidden">
+      <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-1.5 -translate-x-1/2 rounded-md bg-ink px-2 py-1 text-[11px] font-medium whitespace-nowrap text-page opacity-0 shadow transition-opacity delay-200 group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:hidden max-md:hidden">
         {label}
       </span>
     </button>

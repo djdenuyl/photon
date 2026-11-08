@@ -36,8 +36,9 @@ the site.
 - `state/{year}-notes` — notes on pages and elements (`{data: {noteId: json}}`, see Notes).
 - `years/{year}` — years started with "+ Nieuw jaar" (`GET/POST /api/years`).
 - `integrations/{email}-google-photos` — the encrypted Google Photos refresh token.
-- `imported_photos/{year}-{email}-{photoId}` — metadata linking an imported photo to an event;
-  image variants live under the private bucket's `data/{year}/imports/` prefix.
+- `imported_photos/{year}-{email}-{photoId}` — metadata linking an imported photo to an event,
+  with its tone and label; image variants (thumb, display, full-size original) live under the
+  private bucket's `data/{year}/imports/` prefix.
 
 The state maps are small maps, replaced as a whole or changed per key with PATCH (the editor
 does this), (`PUT /api/state/{year}/{kind}`); the client updates its
@@ -63,6 +64,10 @@ Pure function from the plan, the photos (with labels and colour tones) and the p
 - Cover: front with the 2022 Inkscape metrics (HAPPY DONUTS letters, each a photo: ~60% us with
   friends/family, ~40% just us; no family member twice next to or above each other), back with
   four close-ups of two family members each, every duo different, under a 20% pastel tint.
+- Into the bleed: background photos (the front cover's too), colour areas and polygon photos that
+  touch the page's edge (the back cover's shards) carry on to the bleed's edge (`intoBleed`,
+  `photoBox`), so nothing pale shows where the printer cuts. A polygon photo is placed to cover
+  its outline including the bleed, everywhere: editor, contrast and print.
 
 The phone shows one page at a time (swipe or ← →), desktop one spread; the big view uses the
 1600 px display photos, the filmstrip the thumbnails.
@@ -111,6 +116,13 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   event whose photo picker was open. OAuth refresh tokens are encrypted before being stored.
   There's no API to pre-filter what the picker shows, so Photon dedupes on import instead (by a
   hash of Google's media id) and reports how many of the selection were already in Photon.
+- On import Photon keeps three JPEGs per photo: a thumbnail, a 2048 px display version and the
+  full-size original (asked at its own size, so HEIC arrives as JPEG too), computes its tone like
+  `tools/photo_tones.py` and labels it with Claude (`photon/labels.py`, `claude-opus-5`): a few
+  labelled photos of each family member go first as references (a cached prefix), then the new
+  photos in batches of 8, returned as structured output with the fields of `labels.json`. Without
+  `PHOTON_ANTHROPIC_API_KEY` imports stay unlabelled; the next import labels up to 40 of those too.
+  Downloads run four at a time and a failed photo doesn't fail the rest.
 - Connecting and picking happen in the one popup the "Google Foto's verbinden" click opened: once
   the OAuth round trip lands back on it, it asks its opener (a postMessage handshake, see
   `lib/googlePhotos.ts`) what to do next and navigates itself there, rather than closing and
@@ -182,6 +194,30 @@ places (grid photos only; cover parts, backgrounds and month titles just take th
   large photo beside a column — ranked by how little the photos are cropped, with a heavy penalty
   when a photo's orientation would flip. Spread: one button per page; single page: previous/next.
 - Not editable yet: rotating month titles and captions, moving generated layout elements between pages.
+
+## Print and export (`lib/print.ts`, `lib/export.ts`, `components/ExportModal.tsx`)
+
+Albelli takes photos (JPEG/PNG), not a PDF, so the book goes out as one image per page, placed in a
+blank Staand L book as a full-page photo each.
+
+- Print resolution: a photo's pixels over the width it prints at, zoom and crop included
+  (`printDpi`). Under 150 dpi (`LOW_DPI`) the editor marks it with a red "N dpi" badge, live while
+  resizing or zooming; a background photo gets the badge without the dashed outline.
+- "Exporteren" (next to Bewerken/Bekijken) opens a check of the book being edited: text that doesn't
+  fit (each page drawn off-screen and measured like the editor does, `lib/overflow.ts`), empty
+  frames (not empty backgrounds), photos under 150 dpi, photos on more than one spread and open
+  notes. Each line jumps to its page in the editor.
+- Export (desktop Chrome/Edge): every page and the two cover halves become a 2587 × 3413 px JPEG,
+  300 dpi with the 4.5 mm bleed around it: `000-omslag-achterkant.jpg`, `000-omslag-voorkant.jpg`,
+  `001.jpg`… into a folder the user picks (File System Access), else one zip (fflate).
+- Rendering is the editor's own page SVG (`pageBody`) with the bleed in its viewBox, drawn on a
+  canvas. That SVG is drawn as an image, which loads nothing itself: each photo goes in as a data
+  URL of its original (`data/<year>/originals/`, or an import's `original`), scaled to the pixels
+  its frame needs and never above the original; the fonts go in as embedded @font-face rules
+  (Google's latin subsets and HAPPY DONUTS). The SVG is loaded from a data: URL, because Chrome
+  makes a canvas unreadable after drawing an SVG with HTML (the captions) from a blob: URL. A photo
+  without an original falls back to its display version, and the export says which.
+- The phone runs the check but not the export.
 
 ## Notes (`lib/notes.ts`, `components/NotesDrawer.tsx`, `scripts/notes.py`)
 

@@ -538,7 +538,7 @@ export function coverPages(cover: Cover, bi: number): { back: Page; front: Page 
     };
   });
   const front: Element[] = [
-    { type: "photo", id: cover.background ?? "", slot: "background", x: 0, y: 0, w: PAGE.w, h: PAGE.h, bg: true },
+    { type: "photo", id: cover.background ?? "", slot: "background", x: -PAGE.bleed, y: -PAGE.bleed, w: PAGE.w + 2 * PAGE.bleed, h: PAGE.h + 2 * PAGE.bleed, bg: true },
     ...letters,
     { type: "caption", text: cover.label, slot: "label", ...captionFrame(cover.label, 196, 270, 7.3, "donuts", true), size: 7.3, color: "#000", font: "donuts", align: "right" },
   ];
@@ -564,11 +564,27 @@ function shapeParts(e: PhotoElement & { shape: Shape }): { clip: string; under: 
       `<text x="${(e.x + dx) / LSX + left * fs}" y="${(e.y + dy) / LSY + up * fs}" transform="scale(${LSX} ${LSY})" font-family="${DONUTS}" font-size="${fs}" ${attrs}>${ch}</text>`;
     return { clip: text(""), under: text('fill="#000"', 1.3 * k, 1.5 * k), over: "" };
   }
-  const pts = e.shape.pts.map(([u, v]) => `${e.x + u * e.w},${e.y + v * e.h}`).join(" ");
+  const pts = bledPoly(e, e.shape.pts).map((q) => q.join(",")).join(" ");
   // a polygon photo keeps its frame: the outline drawn twice as wide under the photo
   const border = e.border !== undefined ? e.border : e.frame ? { w: 1.5, color: "#fff" } : null;
   const under = border && border.w > 0 ? `<polygon points="${pts}" fill="${border.color}" stroke="${border.color}" stroke-width="${2 * border.w}" stroke-linejoin="miter"/>` : "";
   return { clip: `<polygon points="${pts}"/>`, under, over: e.shape.tint ? `<polygon points="${pts}" fill="${e.shape.tint}" opacity=".2"/>` : "" };
+}
+
+/** A polygon photo's outline (`pts` as fractions of its frame) on the page, carried on into the
+ * bleed where it touches the page's edge, like a colour area. */
+function bledPoly(e: Box, pts: [number, number][]): [number, number][] {
+  return intoBleed(pts.map(([u, v]): [number, number] => [e.x + u * e.w, e.y + v * e.h]));
+}
+
+/** The box a photo is placed to cover: its frame, or for a polygon photo touching the page's edge
+ * its outline including the bleed, so the photo reaches the cut. */
+export function photoBox(e: Element): Box {
+  if (e.type !== "photo" || e.shape?.kind !== "poly") return e.type === "fill" ? { x: 0, y: 0, w: PAGE.w, h: PAGE.h } : e;
+  const pts = bledPoly(e, e.shape.pts);
+  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
 }
 
 /**
@@ -610,7 +626,7 @@ export function pageBody(p: Page, photos: Photos, url: UrlFor): string {
     } else if (e.type === "photo" && e.shape) {
       const { clip, under, over } = shapeParts({ ...e, shape: e.shape });
       const cid = `${id}c${parts.length}`;
-      const inner = `${under}<clipPath id="${cid}">${clip}</clipPath><g clip-path="url(#${cid})" class="lay-photo" data-photo="${e.id}">${placed(photos.get(e.id), e, url, e.zoom, e.focus)}${over}</g>`;
+      const inner = `${under}<clipPath id="${cid}">${clip}</clipPath><g clip-path="url(#${cid})" class="lay-photo" data-photo="${e.id}">${placed(photos.get(e.id), photoBox(e), url, e.zoom, e.focus)}${over}</g>`;
       parts.push(e.rot ? `<g transform="rotate(${e.rot} ${e.x + e.w / 2} ${e.y + e.h / 2})">${inner}</g>` : inner);
     } else if (e.type === "photo") {
       const border = e.border !== undefined ? e.border : e.frame ? { w: 1.5, color: "#fff" } : null;

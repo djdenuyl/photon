@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     oauth_client_id: str = ""
     oauth_client_secret: str = ""
     session_secret: str = "dev-only-secret-change-me"
+    anthropic_api_key: str = ""
+    """Labels photos imported from Google Photos (Claude); empty = they stay unlabelled."""
 
     @property
     def secure_cookies(self) -> bool:

@@ -106,13 +106,16 @@ export function PhotoPicker({
         const status = await fetchJson<{ mediaItemsSet?: boolean; pollingConfig?: { pollInterval?: string } }>(`/api/google-photos/sessions/${googleSession.id}`);
         if (status.mediaItemsSet) {
           setGoogleBusy(true);
-          const result = await fetchJson<{ imported: number; duplicates: number }>("/api/google-photos/import", jsonBody("POST", {
+          const result = await fetchJson<{ imported: number; duplicates: number; failed: number }>("/api/google-photos/import", jsonBody("POST", {
             year: YEAR, event_id: event.id, session_id: googleSession.id,
           }));
           await queryClient.invalidateQueries({ queryKey: ["year", YEAR] });
           if (!stopped) {
-            const already = result.duplicates ? ` (${result.duplicates} stond${result.duplicates === 1 ? "" : "en"} al in Photon)` : "";
-            setGoogleMessage(`${result.imported} foto${result.imported === 1 ? "" : "'s"} toegevoegd aan deze gebeurtenis${already}.`);
+            const notes = [
+              result.duplicates ? `${result.duplicates} stond${result.duplicates === 1 ? "" : "en"} al in Photon` : "",
+              result.failed ? `${result.failed} lukte${result.failed === 1 ? "" : "n"} niet, probeer die opnieuw` : "",
+            ].filter(Boolean);
+            setGoogleMessage(`${result.imported} foto${result.imported === 1 ? "" : "'s"} toegevoegd aan deze gebeurtenis${notes.length ? ` (${notes.join("; ")})` : ""}.`);
             setGoogleSession(null);
             setGoogleBusy(false);
           }

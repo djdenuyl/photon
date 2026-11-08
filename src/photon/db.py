@@ -81,6 +81,11 @@ def save_imported_photo(year: int, email: str, photo_id: str, data: dict[str, An
     client().collection(IMPORTED_PHOTOS).document(key).set(data)
 
 
+def update_imported_photo(year: int, email: str, photo_id: str, fields: dict[str, Any]) -> None:
+    key = f"{year}-{email.lower()}-{photo_id}"
+    client().collection(IMPORTED_PHOTOS).document(key).update(fields)
+
+
 def list_imported_photos(year: int, email: str) -> list[dict[str, Any]]:
     snaps = (
         client()

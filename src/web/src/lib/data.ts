@@ -9,6 +9,8 @@ const DATA = `/data/${YEAR}/`;
 export const thumbUrl = (p: Photo): string => p.thumb.startsWith("/") ? p.thumb : DATA + p.thumb;
 /** 1600 px web versions for the big view (originals stay out of the browser). */
 export const displayUrl = (p: Photo): string => p.display ?? `${DATA}display/${p.id}.jpg`;
+/** The full-size photo, for print (scripts/sync_data.py uploads the album's originals). */
+export const originalUrl = (p: Photo): string => p.original ?? `${DATA}originals/${p.file.split("/").map(encodeURIComponent).join("/")}`;
 
 export interface YearData {
   plan: Plan;

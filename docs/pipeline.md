@@ -1,7 +1,7 @@
 # Data pipeline (local)
 
 Everything under `data/` is made by the scripts in `tools/` (run with `uv run python tools/…`) and
-stays local; `scripts/sync_data.py` uploads what the app shows.
+stays local; `scripts/sync_data.py` uploads what the app shows, and the originals the export prints from.
 
 ## The style guide (earlier books, `data/albelli/`)
 

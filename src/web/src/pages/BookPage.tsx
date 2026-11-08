@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BookViewer, type Slide } from "@/components/BookViewer";
 import { EditBar, EditorOverlay, itemsFor, moveBy, photoOf, SelectionBar, withFrame, type Item } from "@/components/Editor";
+import { ExportModal } from "@/components/ExportModal";
 import { NotesDrawer, type NoteTarget } from "@/components/NotesDrawer";
 import { PagePanel } from "@/components/PagePanel";
 import { PhotoPicker } from "@/components/PhotoPicker";
@@ -96,6 +97,7 @@ export function BookPage() {
   const [choice, setChoice] = useState<boolean | null>(null);
   const perPage = choice ?? !desktop;
   const [open, setOpen] = useState<{ photo: Photo; event: PlanEvent | null } | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // editor state: undo/redo and the live preview while dragging (the edits live in the query cache)
   const [editing, setEditing] = useState(true);
@@ -282,7 +284,7 @@ export function BookPage() {
     setFreshNote(id);
     openPanel("notes");
   };
-  const jumpTo = (n: Note) => {
+  const jumpTo = (n: Pick<Note, "page" | "slot">) => {
     const i = slides.findIndex((s) => s.pages.some(({ page }) => page && `${page.event.id}:${page.k}` === n.page));
     if (i >= 0) go(i);
     if (n.slot) setSelection(new Set([`${n.page}|${n.slot}`]));
@@ -420,6 +422,7 @@ export function BookPage() {
         <option value="page">Pagina's</option>
         <option value="spread">Spreads</option>
       </select>
+      <button type="button" onClick={() => setExporting(true)} className={pick}>Exporteren</button>
     </>
   ) : (
     <>
@@ -438,6 +441,10 @@ export function BookPage() {
         <button type="button" aria-pressed={editing} onClick={() => setEditing(true)} className={seg(editing)}>Bewerken</button>
         <button type="button" aria-pressed={!editing} onClick={() => { setEditing(false); setSelection(new Set()); void saver.flush(); }} className={seg(!editing)}>Bekijken</button>
       </div>
+      <button type="button" onClick={() => { void saver.flush(); setExporting(true); }}
+        className="h-[42px] rounded-full bg-surface px-4 text-sm font-medium text-ink-2 ring-1 ring-hair hover:text-ink">
+        Exporteren
+      </button>
     </>
   );
 
@@ -608,6 +615,21 @@ export function BookPage() {
             setAddingBg(null);
           }}
           onClose={() => setAddingBg(null)}
+        />
+      )}
+      {exporting && (
+        <ExportModal
+          book={book}
+          year={YEAR}
+          photos={data.photos}
+          placed={placedIds}
+          notes={openNotes}
+          desktop={desktop}
+          onJump={(page, slot) => {
+            setEditing(true);
+            jumpTo({ page, slot });
+          }}
+          onClose={() => setExporting(false)}
         />
       )}
       {open && <PhotoSheet photo={open.photo} event={open.event} onClose={() => setOpen(null)} />}

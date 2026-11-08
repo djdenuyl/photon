@@ -1,11 +1,14 @@
 """Google Photos Picker integration and durable imports into Photon's private catalog."""
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportMissingTypeStubs=false
 
+from asyncio import Semaphore, gather, to_thread
 from base64 import urlsafe_b64encode
 from contextlib import suppress
 from datetime import UTC, datetime
 from hashlib import sha256
+from io import BytesIO
 from json import dumps, loads
+from logging import getLogger
 from re import fullmatch
 from typing import Annotated, Any
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
@@ -16,14 +19,17 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from google.api_core.exceptions import NotFound
 from google.cloud.storage import Client
 from httpx import AsyncClient, HTTPError
+from PIL import Image
 from pydantic import BaseModel
 from starlette.responses import RedirectResponse, Response
 
 from photon import db
 from photon.api.auth import User, allowed
+from photon.labels import label_photos, tone
 from photon.settings import get_settings
 
 router = APIRouter(prefix="/api/google-photos", tags=["Google Photos"])
+log = getLogger(__name__)
 PICKER_SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
 PICKER_API = "https://photospicker.googleapis.com/v1"
 _oauth = OAuth()
@@ -242,11 +248,7 @@ def _store_asset(
         blob.upload_from_string(content, content_type=mime)
 
 
-def _load_asset(year: int, email: str, photo_id: str, variant: str) -> tuple[bytes, str] | None:
-    meta = db.imported_photo(year, email, photo_id)
-    if not meta:
-        return None
-    mime = str(meta.get("mime", "image/jpeg"))
+def _asset_bytes(year: int, email: str, photo_id: str, variant: str) -> bytes | None:
     settings = get_settings()
     blob = (
         Client(project=settings.gcp_project)
@@ -254,9 +256,17 @@ def _load_asset(year: int, email: str, photo_id: str, variant: str) -> tuple[byt
         .blob(f"data/{year}/imports/{_owner_key(email)}/{photo_id}/{variant}.bin")
     )
     try:
-        return blob.download_as_bytes(), mime
+        return blob.download_as_bytes()
     except Exception:
         return None
+
+
+def _load_asset(year: int, email: str, photo_id: str, variant: str) -> tuple[bytes, str] | None:
+    meta = db.imported_photo(year, email, photo_id)
+    if not meta:
+        return None
+    content = _asset_bytes(year, email, photo_id, variant)
+    return (content, str(meta.get("mime", "image/jpeg"))) if content is not None else None
 
 
 @router.post("/import")
@@ -289,8 +299,8 @@ async def import_selected(body: ImportRequest, user: User) -> dict[str, int]:
             page_token = str(page.get("nextPageToken", ""))
             if not page_token:
                 break
-        imported = 0
         duplicates = 0
+        candidates: list[tuple[str, str, str, dict[str, Any]]] = []
         for item in media_items:
             media = item.get("mediaFile", {})
             if not str(media.get("mimeType", "")).startswith("image/"):
@@ -308,51 +318,122 @@ async def import_selected(body: ImportRequest, user: User) -> dict[str, int]:
             if db.imported_photo(body.year, user.email, photo_id):
                 duplicates += 1
                 continue
-            files: dict[str, tuple[bytes, str]] = {}
-            for variant, suffix in (("thumb", "w300-h300-c"), ("display", "w2048-h2048")):
-                downloaded = await client.get(f"{base_url}={suffix}", headers=headers)
-                _api_error(downloaded)
-                files[variant] = (
-                    downloaded.content,
-                    downloaded.headers.get("content-type", "image/jpeg").split(";")[0],
+            candidates.append((photo_id, source_id, base_url, media.get("mediaMetadata", {})))
+
+        limit = Semaphore(4)
+        displays: dict[str, bytes] = {}
+
+        async def fetch(
+            photo_id: str, source_id: str, base_url: str, metadata: dict[str, Any]
+        ) -> None:
+            async with limit:
+                displays[photo_id] = await _import_one(
+                    client, headers, body, user.email, photo_id, source_id, base_url, metadata
                 )
-            mime = files["display"][1]
-            _store_asset(body.year, user.email, photo_id, "thumb", *files["thumb"])
-            _store_asset(body.year, user.email, photo_id, "display", *files["display"])
-            metadata = media.get("mediaMetadata", {})
-            taken = str(metadata.get("creationTime", datetime.now(UTC).isoformat()))
-            try:
-                stamp = datetime.fromisoformat(taken.replace("Z", "+00:00"))
-            except ValueError:
-                stamp = datetime.now(UTC)
-            width = int(metadata.get("width", 1600))
-            height = int(metadata.get("height", 1200))
-            db.save_imported_photo(
-                body.year,
-                user.email,
-                photo_id,
-                {
-                    "id": photo_id,
-                    "year": body.year,
-                    "owner": user.email.lower(),
-                    "source_id": source_id,
-                    "event_id": body.event_id,
-                    "taken": taken,
-                    "date": stamp.date().isoformat(),
-                    "time": stamp.strftime("%H:%M:%S"),
-                    "file": f"imports/{photo_id}",
-                    "mime": mime,
-                    "w": width,
-                    "h": height,
-                    "whatsapp": False,
-                    "thumb": f"/api/google-photos/assets/{body.year}/{photo_id}/thumb",
-                    "display": f"/api/google-photos/assets/{body.year}/{photo_id}/display",
-                },
-            )
-            imported += 1
+
+        results = await gather(*(fetch(*c) for c in candidates), return_exceptions=True)
+        failed = sum(1 for r in results if isinstance(r, BaseException))
+        for r in results:
+            if isinstance(r, BaseException):
+                log.warning("importing a photo failed: %r", r)
         with suppress(HTTPError):
             await client.delete(f"{PICKER_API}/sessions/{body.session_id}", headers=headers)
-    return {"imported": imported, "duplicates": duplicates}
+
+    labelled = await _label_pending(body.year, user.email, displays)
+    return {
+        "imported": len(candidates) - failed,
+        "duplicates": duplicates,
+        "failed": failed,
+        "labelled": labelled,
+    }
+
+
+VARIANTS = ("thumb", "display", "original")
+
+
+async def _import_one(
+    client: AsyncClient,
+    headers: dict[str, str],
+    body: ImportRequest,
+    email: str,
+    photo_id: str,
+    source_id: str,
+    base_url: str,
+    metadata: dict[str, Any],
+) -> bytes:
+    """Download one picked photo (thumbnail, display and full-size original, all JPEG: a sized
+    request converts HEIC too), store it and its metadata; returns the display image. Raises
+    when a download fails."""
+    width = int(metadata.get("width") or 0)
+    height = int(metadata.get("height") or 0)
+    sizes = {"thumb": "w300-h300-c", "display": "w2048-h2048"}
+    sizes["original"] = f"w{width}-h{height}" if width and height else "w2048-h2048"
+    files: dict[str, tuple[bytes, str]] = {}
+    for variant, suffix in sizes.items():
+        downloaded = await client.get(f"{base_url}={suffix}", headers=headers)
+        _api_error(downloaded)
+        mime = downloaded.headers.get("content-type", "image/jpeg").split(";")[0]
+        files[variant] = (downloaded.content, mime)
+    if not (width and height):
+        width, height = await to_thread(_size, files["original"][0])
+    for variant, (content, mime) in files.items():
+        await to_thread(_store_asset, body.year, email, photo_id, variant, content, mime)
+    taken = str(metadata.get("creationTime", datetime.now(UTC).isoformat()))
+    try:
+        stamp = datetime.fromisoformat(taken.replace("Z", "+00:00"))
+    except ValueError:
+        stamp = datetime.now(UTC)
+    assets = f"/api/google-photos/assets/{body.year}/{photo_id}"
+    record: dict[str, Any] = {
+        "id": photo_id,
+        "year": body.year,
+        "owner": email.lower(),
+        "source_id": source_id,
+        "event_id": body.event_id,
+        "taken": taken,
+        "date": stamp.date().isoformat(),
+        "time": stamp.strftime("%H:%M:%S"),
+        "file": f"imports/{photo_id}",
+        "mime": files["display"][1],
+        "w": width,
+        "h": height,
+        "whatsapp": False,
+        "thumb": f"{assets}/thumb",
+        "display": f"{assets}/display",
+        "original": f"{assets}/original",
+        "tone": await to_thread(tone, files["thumb"][0]),
+    }
+    await to_thread(db.save_imported_photo, body.year, email, photo_id, record)
+    return files["display"][0]
+
+
+def _size(image: bytes) -> tuple[int, int]:
+    with Image.open(BytesIO(image)) as img:
+        return img.size
+
+
+LABEL_BACKLOG = 40
+
+
+async def _label_pending(year: int, email: str, fresh: dict[str, bytes]) -> int:
+    """Label the photos just imported and, while at it, earlier imports that are still without
+    labels (imported before the API key was set, or when labelling failed). Returns how many."""
+    if not get_settings().anthropic_api_key:
+        return 0
+    pending = {pid: image for pid, image in fresh.items() if image}
+    earlier = await to_thread(db.list_imported_photos, year, email)
+    for photo in earlier:
+        photo_id = str(photo.get("id", ""))
+        if len(pending) >= len(fresh) + LABEL_BACKLOG:
+            break
+        if photo_id and "label" not in photo and photo_id not in pending:
+            image = await to_thread(_asset_bytes, year, email, photo_id, "display")
+            if image:
+                pending[photo_id] = image
+    labels = await label_photos(year, pending)
+    for photo_id, label in labels.items():
+        await to_thread(db.update_imported_photo, year, email, photo_id, {"label": label})
+    return len(labels)
 
 
 @router.get("/{year}")
@@ -369,6 +450,9 @@ def imported(year: int, user: User) -> list[dict[str, Any]]:
         "whatsapp",
         "thumb",
         "display",
+        "original",
+        "label",
+        "tone",
     )
     return [
         {key: photo[key] for key in fields if key in photo}
@@ -384,7 +468,7 @@ def delete_import(year: int, photo_id: str, user: User) -> dict[str, bool]:
         raise HTTPException(status_code=404, detail="not found")
     db.remove_photo_references(year, photo_id, user.email)
     bucket = Client(project=get_settings().gcp_project).bucket(get_settings().bucket)
-    for variant in ("thumb", "display"):
+    for variant in VARIANTS:
         blob = bucket.blob(f"data/{year}/imports/{_owner_key(user.email)}/{photo_id}/{variant}.bin")
         with suppress(NotFound):
             blob.delete()
@@ -394,7 +478,7 @@ def delete_import(year: int, photo_id: str, user: User) -> dict[str, bool]:
 
 @router.get("/assets/{year}/{photo_id}/{variant}")
 def asset(year: int, photo_id: str, variant: str, user: User) -> Response:
-    if variant not in {"thumb", "display"} or not fullmatch(r"g[a-f0-9]{15}", photo_id):
+    if variant not in VARIANTS or not fullmatch(r"g[a-f0-9]{15}", photo_id):
         raise HTTPException(status_code=404, detail="not found")
     found = _load_asset(year, user.email, photo_id, variant)
     if found is None:

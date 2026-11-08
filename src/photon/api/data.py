@@ -67,6 +67,11 @@ def _cached(path: str) -> bytes | None:
     return data
 
 
+def read(path: str) -> bytes | None:
+    """A data file (relative to `data/`), from the cache, the bucket or PHOTON_LOCAL_DATA."""
+    return _cached(path)
+
+
 @router.get("/data/{path:path}", include_in_schema=False)
 def data(path: str, _user: User) -> Response:
     if ".." in path.split("/"):

@@ -1,9 +1,10 @@
 """Upload the data the app reads to the private bucket, under gs://<bucket>/data/.
 
-    uv run python scripts/sync_data.py            # json + thumbnails + display photos
+    uv run python scripts/sync_data.py            # json, thumbnails, display photos, originals
     uv run python scripts/sync_data.py --seed     # also copy local answers/picks to Firestore
 
-Only what the app shows is uploaded (no originals, raw exports or renders). Uses gcloud under
+What the app shows is uploaded, and the year's original photos, which the export renders print
+pages from (rsync: only new or changed ones). Raw exports and renders stay local. Uses gcloud under
 PHOTON_GCLOUD_CONFIG, like deploy.py. Seeding goes through the Firestore REST API with that
 account's token, so it works without application-default credentials.
 """
@@ -44,6 +45,12 @@ def upload() -> None:
         gcloud("storage", "cp", str(DATA / rel), f"{dest}/{rel}")
     for rel in FOLDERS:
         gcloud("storage", "rsync", str(DATA / rel), f"{dest}/{rel}", "--recursive")
+    # photos only (the album download also holds the odd video); no "|" in the pattern: gcloud
+    # is a .cmd on Windows, and cmd would take it for a pipe
+    gcloud(
+        "storage", "rsync", str(DATA / YEAR / "originals"), f"{dest}/{YEAR}/originals",
+        "--recursive", "--exclude", r".*\.[mM][pPoO][4vV]$",
+    )  # fmt: skip
 
 
 def seed() -> None:

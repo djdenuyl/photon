@@ -22,6 +22,7 @@ uv run python deploy.py                # build (Cloud Build) + deploy, map the d
 |---|---|
 | `PHOTON_OAUTH_CLIENT_SECRET` | `denarius-oauth-client-secret` (shared OAuth client) |
 | `PHOTON_SESSION_SECRET` | `photon-session-secret` |
+| `PHOTON_ANTHROPIC_API_KEY` | `photon-anthropic-api-key` (labels imported photos; optional) |
 
 Login is Google OAuth for the accounts in `PHOTON_ALLOWED_EMAILS` only. The OAuth client is shared
 with Denarius/Jumper/Stumped; its authorized redirect URIs must include
@@ -38,10 +39,12 @@ cannot change them. The connector requests only `photospicker.mediaitems.readonl
 `gs://arctic-sound-380822-photon/data/` mirrors the local `data/` folder, but only what the app shows
 (`scripts/sync_data.py`): the Albelli analysis JSON, thumbnails and cover/month graphics, and per
 year `plan.json`, `index.json`, `labels.json`, `tones.json`, `duplicates.json`, `thumbs/` and
-`display/` (1600 px versions). Originals, raw exports and renders stay local. The app streams the
-files through `/data/...` after login; the service worker caches photos.
+`display/` (1600 px versions), and `originals/` (the full-size photos the export prints from;
+rsync, so only new ones go up; videos are left out). Raw exports and renders stay local. The app
+streams the files through `/data/...` after login; the service worker caches photos.
 
 Google Photos imports are stored separately under `data/<year>/imports/` in the private bucket.
 `uv run python deploy.py setup` grants the runtime service account object read, create and delete access.
-Imported metadata and encrypted OAuth refresh tokens are stored in Firestore. Local development
+Imported metadata and encrypted OAuth refresh tokens are stored in Firestore. Cloud Run's request
+timeout is 15 minutes (`deploy.py`): an import downloads the originals and labels them in one request. Local development
 also reads and writes imports in the bucket so they appear consistently in the one environment.

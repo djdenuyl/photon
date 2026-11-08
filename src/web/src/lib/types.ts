@@ -22,6 +22,8 @@ export interface Photo {
   whatsapp: boolean;
   thumb: string;
   display?: string;
+  /** Imported photos: their full-size original (the album's are under `originals/`). */
+  original?: string;
   w: number;
   h: number;
   similarTo?: string;

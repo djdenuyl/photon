@@ -31,6 +31,8 @@ SERVICE_SECRETS = {
     # the Google OAuth client is shared with denarius/jumper/stumped (same redirect-URI list)
     "PHOTON_OAUTH_CLIENT_SECRET": "denarius-oauth-client-secret",
     "PHOTON_SESSION_SECRET": SESSION_SECRET,
+    # labels for photos imported from Google Photos; without it they stay unlabelled
+    "PHOTON_ANTHROPIC_API_KEY": "photon-anthropic-api-key",
 }
 
 GCLOUD = which("gcloud") or "gcloud"
@@ -173,6 +175,7 @@ def deploy() -> None:
         "run", "deploy", SERVICE, "--source", ".", "--region", SETTINGS.gcp_region,
         "--allow-unauthenticated",  # the app enforces its own OAuth + allowlist
         "--memory", "1Gi",  # in-process photo cache
+        "--timeout", "900",  # a Google Photos import downloads originals and labels them
         "--env-vars-file", str(env_file),
     ]  # fmt: skip
     if secret_flag:

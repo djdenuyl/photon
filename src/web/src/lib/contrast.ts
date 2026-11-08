@@ -2,7 +2,7 @@
 // the page) and pick white or near-black, whichever stands out more. Points on a grid over the
 // frame are traced to the topmost element under them; photo pixels come from the thumbnails.
 import { useEffect, useState } from "react";
-import { placement, type CaptionElement, type Element, type Page } from "./layout";
+import { photoBox, placement, type CaptionElement, type Element, type Page } from "./layout";
 import { pointInPolygon, type Pt } from "./mesh";
 import type { Photo, Photos } from "./types";
 
@@ -77,7 +77,7 @@ async function colourAt(page: Page, z: number, x: number, y: number, photos: Pho
   if (!photo) return [255, 255, 255];
   const px = await pixels(url(photo));
   if (!px) return [128, 128, 128];
-  const img = placement(photo, e, e.zoom ?? 1, e.focus);
+  const img = placement(photo, photoBox(e), e.zoom ?? 1, e.focus);
   const u = Math.min(px.w - 1, Math.max(0, Math.floor(((x - img.x) / img.w) * px.w)));
   const v = Math.min(px.h - 1, Math.max(0, Math.floor(((y - img.y) / img.h) * px.h)));
   const i = (v * px.w + u) * 4;
